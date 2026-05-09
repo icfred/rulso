@@ -1,4 +1,4 @@
-_Last edited: 2026-05-09 by RUL-9_
+_Last edited: 2026-05-09 by RUL-20_
 
 # if-resolver — grammar and effect resolution
 
@@ -93,9 +93,9 @@ Extend with `cards.yaml` in M2.
 
 ---
 
-## M1 stub effect
+## M1.5 stub effect
 
-`_apply_stub_effect` adds `+1 chip` to every satisfying player. Sufficient to prove the resolver pipeline end-to-end. Real effect application (driven by `revealed_effect` and `cards.yaml`) lands in M2.
+`_apply_stub_effect` adds `+1 VP` to every satisfying player. Awarding VP rather than chips lets games actually terminate at `VP_TO_WIN = 3`. Real effect application (driven by `revealed_effect` and `cards.yaml`) lands in M2.
 
 ---
 

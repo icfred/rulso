@@ -105,14 +105,16 @@ def test_render_if_rule_rejects_unfilled_slot() -> None:
 
 
 def test_scope_single_player_has_true_fires_effect() -> None:
-    """Specific-player SUBJECT: player satisfies HAS → +1 chip."""
+    """Specific-player SUBJECT: player satisfies HAS → +1 VP."""
     p0 = _player("p0", chips=20)
     p1 = _player("p1", chips=20)
     state = _state(p0, p1)
     rule = _if_rule(_subject("p0"), _quant("GE", 10), _noun("CHIPS"))
     new = resolve_if_rule(state, rule)
-    assert new.players[0].chips == 21
-    assert new.players[1].chips == 20  # unscoped
+    assert new.players[0].vp == 1
+    assert new.players[0].chips == 20  # chips untouched
+    assert new.players[1].vp == 0  # unscoped
+    assert new.players[1].chips == 20
 
 
 def test_scope_single_player_has_false_skips_effect() -> None:
@@ -170,7 +172,7 @@ def test_label_subject_the_cursed_is_unassigned_no_effect() -> None:
 def test_has_gt_true() -> None:
     state = _state(_player("p0", chips=11))
     rule = _if_rule(_subject("p0"), _quant("GT", 10), _noun("CHIPS"))
-    assert resolve_if_rule(state, rule).players[0].chips == 12
+    assert resolve_if_rule(state, rule).players[0].vp == 1
 
 
 def test_has_gt_false_on_equal() -> None:
@@ -182,26 +184,26 @@ def test_has_gt_false_on_equal() -> None:
 def test_has_le_true() -> None:
     state = _state(_player("p0", chips=10))
     rule = _if_rule(_subject("p0"), _quant("LE", 10), _noun("CHIPS"))
-    assert resolve_if_rule(state, rule).players[0].chips == 11
+    assert resolve_if_rule(state, rule).players[0].vp == 1
 
 
 def test_has_lt_true() -> None:
     state = _state(_player("p0", chips=9))
     rule = _if_rule(_subject("p0"), _quant("LT", 10), _noun("CHIPS"))
-    assert resolve_if_rule(state, rule).players[0].chips == 10
+    assert resolve_if_rule(state, rule).players[0].vp == 1
 
 
 def test_has_eq_true() -> None:
     state = _state(_player("p0", chips=7))
     rule = _if_rule(_subject("p0"), _quant("EQ", 7), _noun("CHIPS"))
-    assert resolve_if_rule(state, rule).players[0].chips == 8
+    assert resolve_if_rule(state, rule).players[0].vp == 1
 
 
 def test_noun_vp() -> None:
     """NOUN CHIPS vs VP are both supported M1 resources."""
     state = _state(_player("p0", vp=2))
     rule = _if_rule(_subject("p0"), _quant("EQ", 2), _noun("VP"))
-    assert resolve_if_rule(state, rule).players[0].chips == 51
+    assert resolve_if_rule(state, rule).players[0].vp == 3
 
 
 # --- Immutability check -------------------------------------------------------
@@ -213,5 +215,6 @@ def test_resolve_if_rule_returns_new_state_and_does_not_mutate_input() -> None:
     rule = _if_rule(_subject("p0"), _quant("GE", 50), _noun("CHIPS"))
     new = resolve_if_rule(state, rule)
     assert new is not state
-    assert state.players[0].chips == 50
-    assert new.players[0].chips == 51
+    assert state.players[0].vp == 0
+    assert new.players[0].vp == 1
+    assert new.players[0].chips == 50  # chips untouched
