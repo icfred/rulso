@@ -134,6 +134,9 @@ ISMCTS-specific notes:
 ## How to run (target)
 
 ```bash
+# one-time, at repo root
+git config core.hooksPath .githooks   # activate commit hooks (see docs/infra/readme.md)
+
 # in engine/
 uv sync
 uv run rulso-server          # websocket on :8765

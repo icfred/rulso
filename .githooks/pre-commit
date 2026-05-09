@@ -25,14 +25,16 @@ if [ -n "$ts_files" ]; then
 fi
 
 # --- Ruff (engine Python) --------------------------------------------------
+# Invoke via `uv run --project engine` so ruff resolves from the project's
+# venv regardless of the caller's PATH (no manual PATH munging required).
 py_files=$(staged '^engine/.*\.py$')
 if [ -n "$py_files" ]; then
-    if ! command -v ruff >/dev/null 2>&1; then
-        echo "ERROR: ruff not found. Run 'uv sync' in engine/."
+    if ! command -v uv >/dev/null 2>&1; then
+        echo "ERROR: uv not found. Install uv (https://docs.astral.sh/uv/) and run 'uv sync' in engine/."
         exit 1
     fi
-    echo "$py_files" | xargs ruff format
-    echo "$py_files" | xargs ruff check --fix
+    echo "$py_files" | xargs uv run --project engine ruff format
+    echo "$py_files" | xargs uv run --project engine ruff check --fix
     echo "$py_files" | xargs git add
 fi
 
