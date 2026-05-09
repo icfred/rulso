@@ -1,4 +1,4 @@
-_Last edited: 2026-05-09 by RUL-12_
+_Last edited: 2026-05-10 by RUL-22_
 
 # M1 smoke tests
 
@@ -12,7 +12,7 @@ to end. Per-function unit tests live in `test_round_flow.py`, `test_resolver.py`
 |---|---|---|
 | `engine/tests/test_cli_multiseed.py` | `rulso.cli.run_game` over 20 seeds | every run terminates without exception, exits non-zero (cap-hit), emits `game_start` / `round_start` / `rule_failed` / `cap_hit` events, never emits `game_end` |
 | `engine/tests/test_smoke_state_transitions.py` | `rulso.rules` end-to-end | LOBBY → ROUND_START → BUILD → RESOLVE via hand-injected fixture; failed-rule fail-and-rotate; full 4-round dealer rotation; `active_seat = (dealer+1) % PLAYER_COUNT` invariant at every dealer position |
-| `engine/tests/test_smoke_resolution_edges.py` | `rulso.effects.resolve_if_rule`, `rulso.rules` fail path | unassigned-label SUBJECT → state-equal no-op (all four labels); active goals never consumed on a failed scope; failed rule never mutates chips / VP / goals; partial-fill failed rule discards played fragments without firing the resolver |
+| `engine/tests/test_smoke_resolution_edges.py` | `rulso.effects.resolve_if_rule`, `rulso.rules` fail path | M2-stub label SUBJECT (GENEROUS / CURSED / MARKED / CHAINED) → state-equal no-op; live label firing leaves active goals untouched; failed rule never mutates chips / VP / goals; partial-fill failed rule discards played fragments without firing the resolver. Live-label firing tests (LEADER / WOUNDED) live in `test_resolver.py` after RUL-22. |
 
 ## Why every M1 game cap-hits
 

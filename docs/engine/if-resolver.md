@@ -1,4 +1,4 @@
-_Last edited: 2026-05-09 by RUL-20_
+_Last edited: 2026-05-10 by RUL-22_
 
 # if-resolver — grammar and effect resolution
 
@@ -40,12 +40,14 @@ No string formatting — narration is out of scope (separate ticket).
 
 | Function | Signature | Purpose |
 |---|---|---|
-| `resolve_if_rule` | `(GameState, RuleBuilder) → GameState` | Full resolution pipeline |
+| `resolve_if_rule` | `(GameState, RuleBuilder, labels=None) → GameState` | Full resolution pipeline |
+
+`labels` is the optional pre-computed mapping returned by `rulso.labels.recompute_labels`. When omitted, the resolver recomputes from `state` itself. Labels are **never stored on `GameState`** — they enter as a transient parameter (ADR-0001 / `design/state.md` "computed, not stored").
 
 ### Pipeline
 
 1. `grammar.render_if_rule(rule)` → `IfRule`
-2. `_scope_subject(state, subject)` → `frozenset[player_id]`
+2. `_scope_subject(state, subject, labels)` → `frozenset[player_id]`
 3. `_evaluate_has(player, rule)` for each scoped player
 4. `_apply_stub_effect(state, matching_ids)` → updated `GameState`
 
@@ -57,10 +59,13 @@ All steps pure; input state never mutated (Pydantic `model_copy`).
 
 `subject.name` controls the scope:
 
-| `subject.name` value | Scope | M1 behaviour |
+| `subject.name` value | Scope | M1.5 behaviour |
 |---|---|---|
-| `THE LEADER` / `THE WOUNDED` / `THE GENEROUS` / `THE CURSED` | Label | Always unassigned in M1 → `frozenset()` → no effect |
+| `THE LEADER` / `THE WOUNDED` | Label (live, RUL-19) | Look up holders in the `labels` mapping; effect fires for each holder satisfying HAS |
+| `THE GENEROUS` / `THE CURSED` / `THE MARKED` / `THE CHAINED` | Label (M2 stub) | Empty frozenset until status / history derivations land — no effect |
 | Any other string | Literal player id | Matches the single `Player` with that `id`, or `frozenset()` if absent |
+
+Label names come from `rulso.labels.LABEL_NAMES`. Tie-break policy: ties → all tied players hold the label (ADR-0001).
 
 Polymorphic SUBJECTs (`ANYONE`, `EACH PLAYER`, etc.) arrive with `cards.yaml` in M2.
 
@@ -101,10 +106,10 @@ Extend with `cards.yaml` in M2.
 
 ## NotImplementedError / deferred
 
-- Polymorphic SUBJECT resolution (ANYONE, EACH PLAYER, per-label real lookup) — M2
+- Polymorphic SUBJECT resolution (ANYONE, EACH PLAYER) — M2
 - WHEN / WHILE persistence — M2
 - Real effect catalogue — M2
-- `labels.py` is empty; label scope short-circuits to `frozenset()` in `_scope_subject`
+- M2-stub labels (GENEROUS / CURSED / MARKED / CHAINED) return `frozenset()` until their derivations land in M2; rules referencing them resolve to no matches
 
 ---
 
@@ -119,10 +124,14 @@ Extend with `cards.yaml` in M2.
 - `test_scope_single_player_has_true_fires_effect`
 - `test_scope_single_player_has_false_skips_effect`
 - `test_scope_single_player_unknown_id_is_no_match`
-- `test_label_subject_the_leader_is_unassigned_no_effect`
-- `test_label_subject_the_wounded_is_unassigned_no_effect`
-- `test_label_subject_the_generous_is_unassigned_no_effect`
-- `test_label_subject_the_cursed_is_unassigned_no_effect`
+- `test_label_subject_leader_single_holder_fires_for_holder` (RUL-22)
+- `test_label_subject_leader_tied_holders_all_fire` (RUL-22)
+- `test_label_subject_wounded_empty_player_set_is_no_op` (RUL-22)
+- `test_label_subject_wounded_filters_by_has` (RUL-22)
+- `test_label_subject_generous_m2_stub_no_effect`
+- `test_label_subject_cursed_m2_stub_no_effect`
+- `test_label_subject_uses_explicit_labels_argument` (RUL-22)
+- `test_label_subject_explicit_labels_match_recompute` (RUL-22)
 - `test_has_gt_true` / `test_has_gt_false_on_equal` / `test_has_le_true` / `test_has_lt_true` / `test_has_eq_true`
 - `test_noun_vp`
 - `test_resolve_if_rule_returns_new_state_and_does_not_mutate_input`
