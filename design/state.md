@@ -58,13 +58,13 @@ It does **not** define specific cards (see `cards.yaml`) or grammar render rules
 - `rule`: frozen rule structure
 - `created_round`, `created_by`
 
-### Labels (computed, not stored)
-- `THE LEADER`: argmax(chips); ties → unassigned
-- `THE WOUNDED`: argmin(chips); ties → unassigned
-- `THE GENEROUS`: argmax(cards_given_this_game); ties or zero → unassigned
-- `THE CURSED`: argmax(burn); ties or zero → unassigned
+### Labels (computed, not stored — see ADR-0001)
+- `THE LEADER`: argmax(vp); ties → all tied players hold the label
+- `THE WOUNDED`: argmin(chips); ties → all tied players hold the label
+- `THE GENEROUS`: argmax(cards_given_this_game); ties → all tied players; zero → empty
+- `THE CURSED`: argmax(burn); ties → all tied players; zero → empty
 
-A rule referencing an unassigned label resolves to "no matches"; the effect doesn't fire.
+A rule referencing a label held by no player ("empty" — e.g. CURSED with no BURN tokens in play) resolves to "no matches"; the effect doesn't fire. A rule referencing a label held by N>1 players scopes to all of them and the effect applies N times.
 
 ---
 
