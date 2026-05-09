@@ -1,0 +1,138 @@
+"""Random-legal bot.
+
+Uniformly samples a legal action for the active player. M1 baseline; M3 ISMCTS
+uses this for rollouts and as a baseline opponent. Pure function: state in,
+action out, RNG injected. No module-level mutable state.
+
+The ``Action`` type is defined here for now — ``state.py`` does not yet model
+player actions. Future tickets can promote it once the surface stabilises
+(e.g. when the protocol layer needs to (de)serialise actions).
+
+Legal-action enumeration applies the design-spec filters: slot type
+compatibility, hand membership, MUTE blocks MODIFIER plays, and discard
+affordability via chip count.
+"""
+
+from __future__ import annotations
+
+import itertools
+import random
+from typing import Annotated, Literal
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from rulso.state import (
+    DISCARD_COST,
+    CardType,
+    GameState,
+    Phase,
+    Player,
+)
+
+_FROZEN = ConfigDict(frozen=True)
+
+
+class PlayCard(BaseModel):
+    """Play one card from hand into one open slot.
+
+    ``dice`` is 1 (1d6) or 2 (2d6) when the card is a MODIFIER — under the M1
+    stub every MODIFIER play is treated as a comparator. ``None`` otherwise.
+    """
+
+    model_config = _FROZEN
+
+    kind: Literal["play_card"] = "play_card"
+    card_id: str
+    slot: str
+    dice: Literal[1, 2] | None = None
+
+
+class DiscardRedraw(BaseModel):
+    """Spend chips to discard 1..3 cards and redraw."""
+
+    model_config = _FROZEN
+
+    kind: Literal["discard_redraw"] = "discard_redraw"
+    card_ids: tuple[str, ...]
+
+
+class Pass(BaseModel):
+    """Forced pass — no legal play and no affordable discard."""
+
+    model_config = _FROZEN
+
+    kind: Literal["pass"] = "pass"
+
+
+Action = Annotated[
+    PlayCard | DiscardRedraw | Pass,
+    Field(discriminator="kind"),
+]
+
+
+def choose_action(state: GameState, player_id: str, rng: random.Random) -> Action:
+    """Return a uniformly random legal action for ``player_id``.
+
+    Deterministic given ``rng``: same RNG state in, same action out. Returns
+    :class:`Pass` when the player has no legal play and cannot afford a
+    discard-redraw. Pure function — no global state, no mutation of inputs.
+    """
+    player = _find_player(state, player_id)
+    actions = _enumerate_actions(state, player)
+    if not actions:
+        return Pass()
+    return rng.choice(actions)
+
+
+def _find_player(state: GameState, player_id: str) -> Player:
+    for p in state.players:
+        if p.id == player_id:
+            return p
+    raise ValueError(f"unknown player {player_id!r}")
+
+
+def _enumerate_actions(state: GameState, player: Player) -> list[Action]:
+    """Flatten every legal (kind, params) tuple into one list for uniform sampling.
+
+    Only legal during BUILD; returns empty list for other phases so the caller
+    falls back to :class:`Pass`.
+    """
+    if state.phase is not Phase.BUILD:
+        return []
+    actions: list[Action] = []
+    actions.extend(_enumerate_plays(state, player))
+    actions.extend(_enumerate_discards(player))
+    return actions
+
+
+def _enumerate_plays(state: GameState, player: Player) -> list[PlayCard]:
+    if state.active_rule is None:
+        return []
+    muted = player.status.mute
+    plays: list[PlayCard] = []
+    for slot in state.active_rule.slots:
+        if slot.filled_by is not None:
+            continue
+        for card in player.hand:
+            if card.type is not slot.type:
+                continue
+            if muted and card.type is CardType.MODIFIER:
+                continue
+            if card.type is CardType.MODIFIER:
+                # Treat every MODIFIER as a comparator: offer both dice options.
+                plays.append(PlayCard(card_id=card.id, slot=slot.name, dice=1))
+                plays.append(PlayCard(card_id=card.id, slot=slot.name, dice=2))
+            else:
+                plays.append(PlayCard(card_id=card.id, slot=slot.name, dice=None))
+    return plays
+
+
+def _enumerate_discards(player: Player) -> list[DiscardRedraw]:
+    if not player.hand or player.chips < DISCARD_COST:
+        return []
+    max_k = min(3, len(player.hand), player.chips // DISCARD_COST)
+    discards: list[DiscardRedraw] = []
+    for k in range(1, max_k + 1):
+        for combo in itertools.combinations(player.hand, k):
+            discards.append(DiscardRedraw(card_ids=tuple(c.id for c in combo)))
+    return discards
