@@ -1,4 +1,4 @@
-_Last edited: 2026-05-09 by RUL-7_
+_Last edited: 2026-05-09 by RUL-14_
 
 # engine
 
@@ -34,6 +34,17 @@ uv run ruff format            # format
 uv run ruff check             # lint
 uv run ruff format --check    # CI check
 ```
+
+## Pre-commit hook contract
+
+`.githooks/pre-commit` runs ruff on staged `engine/**.py` via `uv run --project engine ruff …`. Contributors only need:
+
+- `uv` on PATH (https://docs.astral.sh/uv/)
+- `uv sync` once in `engine/` to materialise the venv
+
+No manual `PATH=` munging, no global `ruff` install. The hook resolves ruff through `uv` regardless of caller environment.
+
+(Client side: `npm install` in `client/`; the hook calls `client/node_modules/.bin/biome` directly.)
 
 ## Conventions
 

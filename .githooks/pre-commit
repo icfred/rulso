@@ -12,21 +12,19 @@ staged() {
 }
 
 # --- Biome (client TS/JS/JSON) ---------------------------------------------
+# Resolve biome via the local node_modules install so callers don't need it on PATH.
 ts_files=$(staged '^client/.*\.(ts|tsx|js|jsx|json)$')
 if [ -n "$ts_files" ]; then
-    if ! command -v biome >/dev/null 2>&1 && ! [ -x "client/node_modules/.bin/biome" ]; then
-        echo "ERROR: biome not found. Run 'npm install' in client/."
+    if ! [ -x "client/node_modules/.bin/biome" ]; then
+        echo "ERROR: client/node_modules/.bin/biome not found. Run 'npm install' in client/."
         exit 1
     fi
-    biome_bin="biome"
-    [ -x "client/node_modules/.bin/biome" ] && biome_bin="client/node_modules/.bin/biome"
-    echo "$ts_files" | xargs "$biome_bin" check --write
+    echo "$ts_files" | xargs client/node_modules/.bin/biome check --write
     echo "$ts_files" | xargs git add
 fi
 
 # --- Ruff (engine Python) --------------------------------------------------
-# Invoke via `uv run --project engine` so ruff resolves from the project's
-# venv regardless of the caller's PATH (no manual PATH munging required).
+# Resolve ruff via `uv run --project engine` so callers don't need the venv on PATH.
 py_files=$(staged '^engine/.*\.py$')
 if [ -n "$py_files" ]; then
     if ! command -v uv >/dev/null 2>&1; then
