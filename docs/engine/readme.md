@@ -1,4 +1,4 @@
-_Last edited: 2026-05-09 by RUL-6_
+_Last edited: 2026-05-09 by RUL-7_
 
 # engine
 
@@ -10,7 +10,7 @@ Python 3.12 package. `uv` managed. Pydantic v2 state, asyncio + `websockets` ser
 |---|---|---|
 | `engine/pyproject.toml` | scaffolded | deps: `pydantic>=2`, `websockets`, `pytest`; dev: `ruff` |
 | `engine/src/rulso/__init__.py` | stub | package marker |
-| `engine/src/rulso/state.py` | stub | `GameState`, `Player`, `Card`, `RuleBuilder` (Pydantic, frozen) |
+| `engine/src/rulso/state.py` | live | frozen pydantic models + constants — see [state-models.md](state-models.md) |
 | `engine/src/rulso/rules.py` | stub | round flow, phase transitions |
 | `engine/src/rulso/grammar.py` | stub | polymorphic card rendering |
 | `engine/src/rulso/effects.py` | stub | effect application |
@@ -21,6 +21,7 @@ Python 3.12 package. `uv` managed. Pydantic v2 state, asyncio + `websockets` ser
 | `engine/src/rulso/bots/__init__.py` | stub | bots package |
 | `engine/src/rulso/bots/random.py` | stub | random-legal-play bot |
 | `engine/tests/test_smoke.py` | live | asserts `import rulso` works |
+| `engine/tests/test_state_models.py` | live | construction, frozen rejection, JSON round-trip |
 
 ## Commands
 
