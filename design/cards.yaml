@@ -1,0 +1,97 @@
+# Rulso — M1.5 starter card subset
+# Authored by RUL-17. Source-of-truth design contract: design/cards-inventory.md.
+#
+# Schema (validated by engine/src/rulso/cards.py via Pydantic):
+#
+#   condition_cards:  # CONDITION templates — own a rule's lifetime + slot shape.
+#     - id:   <stable engine id, dotted lowercase>
+#       name: <render token, bare keyword: IF | WHEN | WHILE>
+#       kind: <RuleKind enum: IF | WHEN | WHILE>
+#       slots:
+#         - { name: <slot label>, type: <CardType: SUBJECT|NOUN|MODIFIER|JOKER> }
+#       # NB. CONDITION is not a state.CardType. Conditions live in their own
+#       # deck (the dealer's first play each round) and are loaded as
+#       # ConditionTemplate, not Card.
+#
+#   subject_cards:    # SUBJECT cards — fill the SUBJECT slot.
+#     - { id: <stable id>, name: <render token> }
+#       # name conventions:
+#       #   literal seats:  seat_0 .. seat_3   (matches Player.id once RUL-18 aligns)
+#       #   labels:         LEADER, WOUNDED    (matched by effects._scope_subject)
+#
+#   noun_cards:       # NOUN cards — fill the NOUN slot.
+#     - { id: <stable id>, name: <render token: CHIPS | VP> }
+#
+#   modifier_cards:   # MODIFIER comparator cards — fill the QUANT slot.
+#     - { id: <stable id>, name: "<OP>:<N>" }   # OP in {GE,GT,LE,LT,EQ}; N int
+#
+#   deck:             # Physical-deck composition. Multiplies cards into the main deck.
+#     - { id: <subject_/noun_/modifier_ id>, copies: <int > 0> }
+#       # CONDITION cards must NOT appear here — they live in a separate condition deck.
+#
+# All card ids must be unique across condition_cards/subject_cards/noun_cards/modifier_cards.
+# Every `deck` entry id must reference a non-CONDITION card.
+
+condition_cards:
+  - id: cond.if
+    name: IF
+    kind: IF
+    slots:
+      - { name: SUBJECT, type: SUBJECT }
+      - { name: QUANT, type: MODIFIER }
+      - { name: NOUN, type: NOUN }
+
+subject_cards:
+  - { id: subj.seat_0, name: seat_0 }
+  - { id: subj.seat_1, name: seat_1 }
+  - { id: subj.seat_2, name: seat_2 }
+  - { id: subj.seat_3, name: seat_3 }
+  - { id: subj.leader, name: LEADER }
+  - { id: subj.wounded, name: WOUNDED }
+
+noun_cards:
+  - { id: noun.chips, name: CHIPS }
+  - { id: noun.vp, name: VP }
+
+modifier_cards:
+  # Coverage: 5 OPs (GE, GT, LE, LT, EQ) × thresholds spanning 3, 5, 10, 20.
+  # The five inventory-mandated kinds (LT:5, LT:20, GT:10, GE:3, EQ:5) are
+  # included; the rest fill out the OP × N matrix so 4-bot games have a thick
+  # enough comparator pool that hands draw a usable mix.
+  - { id: mod.cmp.lt.3, name: "LT:3" }
+  - { id: mod.cmp.lt.5, name: "LT:5" }
+  - { id: mod.cmp.lt.10, name: "LT:10" }
+  - { id: mod.cmp.lt.20, name: "LT:20" }
+  - { id: mod.cmp.le.5, name: "LE:5" }
+  - { id: mod.cmp.le.20, name: "LE:20" }
+  - { id: mod.cmp.gt.3, name: "GT:3" }
+  - { id: mod.cmp.gt.10, name: "GT:10" }
+  - { id: mod.cmp.ge.3, name: "GE:3" }
+  - { id: mod.cmp.ge.5, name: "GE:5" }
+  - { id: mod.cmp.ge.10, name: "GE:10" }
+  - { id: mod.cmp.eq.5, name: "EQ:5" }
+
+deck:
+  # SUBJECT — 18 physical (6 kinds × 3 copies)
+  - { id: subj.seat_0, copies: 3 }
+  - { id: subj.seat_1, copies: 3 }
+  - { id: subj.seat_2, copies: 3 }
+  - { id: subj.seat_3, copies: 3 }
+  - { id: subj.leader, copies: 3 }
+  - { id: subj.wounded, copies: 3 }
+  # NOUN — 8 physical (2 kinds × 4 copies)
+  - { id: noun.chips, copies: 4 }
+  - { id: noun.vp, copies: 4 }
+  # MODIFIER — 24 physical (12 kinds × 2 copies)
+  - { id: mod.cmp.lt.3, copies: 2 }
+  - { id: mod.cmp.lt.5, copies: 2 }
+  - { id: mod.cmp.lt.10, copies: 2 }
+  - { id: mod.cmp.lt.20, copies: 2 }
+  - { id: mod.cmp.le.5, copies: 2 }
+  - { id: mod.cmp.le.20, copies: 2 }
+  - { id: mod.cmp.gt.3, copies: 2 }
+  - { id: mod.cmp.gt.10, copies: 2 }
+  - { id: mod.cmp.ge.3, copies: 2 }
+  - { id: mod.cmp.ge.5, copies: 2 }
+  - { id: mod.cmp.ge.10, copies: 2 }
+  - { id: mod.cmp.eq.5, copies: 2 }
