@@ -15,6 +15,22 @@ Definition of done:
 - CLI prints round-by-round narration of plays and resolutions
 - Smoke tests cover state transitions and rule-resolution edge cases (failed rule, unassigned label)
 
+## M1.5: Watchable engine
+
+**Goal**: bridge between M1 (sound state machine) and M2 (full card set). After M1.5, `uv run rulso --seed 0` produces a CLI game where bots play real cards from real hands, IF rules sometimes resolve, and someone can win.
+
+Definition of done:
+- `design/cards-inventory.md` exists (full intended card list with M1.5 starter subset called out)
+- `design/cards.yaml` written with ~20 starter cards (1 IF condition + 4–6 SUBJECTs incl. literal seats + LEADER/WOUNDED labels + 2 NOUNs CHIPS/VP + 5 comparator MODs at varied N)
+- Hands populated at `start_game(seed)` from a seeded shuffled deck
+- `enter_round_start` draws a real CONDITION card; the dealer's first slot is filled from their actual hand
+- Labels module computes LEADER and WOUNDED; other labels stay empty for M2
+- IF rule effect awards +1 VP (was +1 chip stub in M1)
+- Across seeds 0–9, all CLI runs terminate without exception, ≥1 produces a winner, ≥N rules resolve successfully
+- README has a "Try it" section pointing at `uv run rulso --seed 0`
+
+Out of scope: WHEN/WHILE rules, JOKERs, GENEROUS/CURSED/MARKED/CHAINED labels, polymorphic rendering, SHOP rounds, dice-driven comparator N, goal cards, effect catalogue beyond the +1 VP stub. All M2.
+
 ## M2: Full card set
 
 **Goal**: Every card type and mechanic from `design/cards.yaml` works.
