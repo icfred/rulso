@@ -1,4 +1,4 @@
-_Last edited: 2026-05-09 by RUL-11_
+_Last edited: 2026-05-09 by RUL-12_
 
 # engine
 
@@ -27,6 +27,9 @@ Python 3.12 package. `uv` managed. Pydantic v2 state, asyncio + `websockets` ser
 | `engine/tests/test_resolver.py` | live | grammar render, SUBJECT scope, HAS evaluation, effect stub |
 | `engine/tests/test_random_bot.py` | live | random bot: slot compat, MUTE, dice, discard, 1000-seed invariant |
 | `engine/tests/test_cli_smoke.py` | live | CLI runner: in-process smoke + round-cap exit code |
+| `engine/tests/test_cli_multiseed.py` | live | 20-seed CLI sweep: cap-hit + event coverage — see [m1-smoke.md](m1-smoke.md) |
+| `engine/tests/test_smoke_state_transitions.py` | live | end-to-end phase walk via hand-injected fixture — see [m1-smoke.md](m1-smoke.md) |
+| `engine/tests/test_smoke_resolution_edges.py` | live | resolver corners: unassigned label + failed-rule invariants — see [m1-smoke.md](m1-smoke.md) |
 
 ## Commands
 
