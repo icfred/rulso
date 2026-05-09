@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.uv/
+build/
+dist/
+
+# Node
+node_modules/
+.vite/
+*.log
+
+# Worktrees (kept local-only; orchestrator manages these)
+.worktrees/
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Generated client types (regenerated from engine Pydantic models)
+client/src/types/generated/

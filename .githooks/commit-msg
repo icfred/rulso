@@ -1,0 +1,13 @@
+#!/bin/sh
+# Enforces "RUL-<id>: " prefix on every commit message.
+# Bypass only with --no-verify (and don't).
+
+if ! head -n1 "$1" | grep -qE '^RUL-[0-9]+: '; then
+    echo "ERROR: commit message must start with 'RUL-<id>: '"
+    echo "Got:   $(head -n1 "$1")"
+    echo
+    echo "Examples:"
+    echo "  RUL-12: add Player pydantic model"
+    echo "  RUL-7: wire websocket server entry point"
+    exit 1
+fi

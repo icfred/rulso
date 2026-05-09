@@ -1,0 +1,39 @@
+#!/bin/sh
+# Runs Biome on staged client TS/JS and Ruff on staged engine Python.
+# Auto-fixes what it can; blocks the commit on unfixable issues.
+#
+# Agents should run formatters themselves before commit (see workflows/feature-work.md);
+# this hook is a safety net.
+
+set -e
+
+staged() {
+    git diff --cached --name-only --diff-filter=ACMR | grep -E "$1" || true
+}
+
+# --- Biome (client TS/JS/JSON) ---------------------------------------------
+ts_files=$(staged '^client/.*\.(ts|tsx|js|jsx|json)$')
+if [ -n "$ts_files" ]; then
+    if ! command -v biome >/dev/null 2>&1 && ! [ -x "client/node_modules/.bin/biome" ]; then
+        echo "ERROR: biome not found. Run 'npm install' in client/."
+        exit 1
+    fi
+    biome_bin="biome"
+    [ -x "client/node_modules/.bin/biome" ] && biome_bin="client/node_modules/.bin/biome"
+    echo "$ts_files" | xargs "$biome_bin" check --write
+    echo "$ts_files" | xargs git add
+fi
+
+# --- Ruff (engine Python) --------------------------------------------------
+py_files=$(staged '^engine/.*\.py$')
+if [ -n "$py_files" ]; then
+    if ! command -v ruff >/dev/null 2>&1; then
+        echo "ERROR: ruff not found. Run 'uv sync' in engine/."
+        exit 1
+    fi
+    echo "$py_files" | xargs ruff format
+    echo "$py_files" | xargs ruff check --fix
+    echo "$py_files" | xargs git add
+fi
+
+exit 0
