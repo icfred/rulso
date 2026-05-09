@@ -1,0 +1,31 @@
+[project]
+name = "rulso"
+version = "0.1.0"
+authors = [
+    { name = "icfred", email = "fredric.lipman97@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2",
+    "pytest>=9.0.3",
+    "websockets>=16.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.8,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.15.12",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
