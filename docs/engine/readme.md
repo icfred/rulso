@@ -1,4 +1,4 @@
-_Last edited: 2026-05-09 by RUL-8_
+_Last edited: 2026-05-09 by RUL-9_
 
 # engine
 
@@ -12,8 +12,8 @@ Python 3.12 package. `uv` managed. Pydantic v2 state, asyncio + `websockets` ser
 | `engine/src/rulso/__init__.py` | stub | package marker |
 | `engine/src/rulso/state.py` | live | frozen pydantic models + constants — see [state-models.md](state-models.md) |
 | `engine/src/rulso/rules.py` | live | round flow phase machine — see [round-flow.md](round-flow.md) |
-| `engine/src/rulso/grammar.py` | stub | polymorphic card rendering |
-| `engine/src/rulso/effects.py` | stub | effect application |
+| `engine/src/rulso/grammar.py` | live | IF rule grammar (M1: SUBJECT/QUANT/NOUN) — see [if-resolver.md](if-resolver.md) |
+| `engine/src/rulso/effects.py` | live | IF rule effect resolver (M1 stub: +1 chip) — see [if-resolver.md](if-resolver.md) |
 | `engine/src/rulso/labels.py` | stub | label recomputation |
 | `engine/src/rulso/persistence.py` | stub | WHEN / WHILE rule handling |
 | `engine/src/rulso/server.py` | stub | websocket entry point |
@@ -23,6 +23,7 @@ Python 3.12 package. `uv` managed. Pydantic v2 state, asyncio + `websockets` ser
 | `engine/tests/test_smoke.py` | live | asserts `import rulso` works |
 | `engine/tests/test_state_models.py` | live | construction, frozen rejection, JSON round-trip |
 | `engine/tests/test_round_flow.py` | live | round-flow phase transitions, dealer rotation, burn tick |
+| `engine/tests/test_resolver.py` | live | grammar render, SUBJECT scope, HAS evaluation, effect stub |
 
 ## Commands
 
