@@ -1,4 +1,4 @@
-_Last edited: 2026-05-09 by RUL-9_
+_Last edited: 2026-05-09 by RUL-10_
 
 # engine
 
@@ -19,11 +19,12 @@ Python 3.12 package. `uv` managed. Pydantic v2 state, asyncio + `websockets` ser
 | `engine/src/rulso/server.py` | stub | websocket entry point |
 | `engine/src/rulso/protocol.py` | stub | engine↔client message types |
 | `engine/src/rulso/bots/__init__.py` | stub | bots package |
-| `engine/src/rulso/bots/random.py` | stub | random-legal-play bot |
+| `engine/src/rulso/bots/random.py` | live | random-legal-play bot — see [bots.md](bots.md) |
 | `engine/tests/test_smoke.py` | live | asserts `import rulso` works |
 | `engine/tests/test_state_models.py` | live | construction, frozen rejection, JSON round-trip |
 | `engine/tests/test_round_flow.py` | live | round-flow phase transitions, dealer rotation, burn tick |
 | `engine/tests/test_resolver.py` | live | grammar render, SUBJECT scope, HAS evaluation, effect stub |
+| `engine/tests/test_random_bot.py` | live | random bot: slot compat, MUTE, dice, discard, 1000-seed invariant |
 
 ## Commands
 
