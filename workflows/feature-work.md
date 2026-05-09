@@ -40,7 +40,7 @@ Both must exit clean. If they don't, fix the underlying issue (don't suppress).
     - Concise. AI-optimized. Strip ceremony.
     - File paths and function names, not narratives.
     - Why-decisions go in commit messages, not docs.
-11. Update `docs/<area>/readme.md` if surface area changed (new file, new public function, new schema).
+11. **Do NOT touch `docs/<area>/readme.md` (the per-area surface-table index).** The orchestrator owns the index and updates it during the merge sweep — one batched commit per sweep, attached to whichever ticket prompted it. Workers editing the index causes guaranteed merge conflicts in parallel batches: the single `_Last edited:` header line and the appended surface-table rows collide every time. (Lesson logged in `docs/workflow_lessons.md`, 2026-05-09.) If your ticket genuinely requires editing the index, the hand-over prompt will say so explicitly; otherwise leave it alone.
 12. Commit:
     - Message: `<TICKET-ID>: <imperative summary>`
     - The `commit-msg` hook enforces the `RUL-\d+:` prefix.
