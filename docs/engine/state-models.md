@@ -1,4 +1,4 @@
-_Last edited: 2026-05-09 by RUL-7_
+_Last edited: 2026-05-09 by RUL-8_
 
 # state.py — Pydantic models
 
@@ -33,7 +33,7 @@ All `frozen=True`. Collections are `tuple[...]` so frozen instances are deeply i
 | `RuleBuilder` | `template: RuleKind`, `slots: tuple[Slot, ...]`, `plays: tuple[Play, ...]`, `joker_attached: Card \| None` |
 | `PersistentRule` | `kind: RuleKind` (WHEN\|WHILE), `rule: RuleBuilder`, `created_round: int`, `created_by: str` |
 | `LastRoll` | `player_id: str`, `value: int`, `dice_count: int` |
-| `GameState` | `phase`, `round_number`, `dealer_seat`, `active_seat`, `players`, `deck`, `discard`, `effect_deck`, `effect_discard`, `goal_deck`, `goal_discard`, `active_goals`, `active_rule: RuleBuilder \| None`, `persistent_rules`, `last_roll: LastRoll \| None`, `winner: Player \| None` |
+| `GameState` | `phase`, `round_number`, `dealer_seat`, `active_seat`, `players`, `deck`, `discard`, `effect_deck`, `effect_discard`, `goal_deck`, `goal_discard`, `active_goals`, `active_rule: RuleBuilder \| None`, `persistent_rules`, `last_roll: LastRoll \| None`, `winner: Player \| None`, `build_turns_taken: int` (RUL-8), `revealed_effect: Card \| None` (RUL-8) |
 
 ### Update pattern
 

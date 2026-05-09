@@ -168,3 +168,6 @@ class GameState(BaseModel):
     persistent_rules: tuple[PersistentRule, ...] = ()
     last_roll: LastRoll | None = None
     winner: Player | None = None
+    # Added by RUL-8 (round flow phase machine). Additive only — see docs/engine/round-flow.md.
+    build_turns_taken: int = 0
+    revealed_effect: Card | None = None
