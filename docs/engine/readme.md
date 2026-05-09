@@ -1,4 +1,4 @@
-_Last edited: 2026-05-09 by RUL-10_
+_Last edited: 2026-05-09 by RUL-11_
 
 # engine
 
@@ -14,6 +14,7 @@ Python 3.12 package. `uv` managed. Pydantic v2 state, asyncio + `websockets` ser
 | `engine/src/rulso/rules.py` | live | round flow phase machine — see [round-flow.md](round-flow.md) |
 | `engine/src/rulso/grammar.py` | live | IF rule grammar (M1: SUBJECT/QUANT/NOUN) — see [if-resolver.md](if-resolver.md) |
 | `engine/src/rulso/effects.py` | live | IF rule effect resolver (M1 stub: +1 chip) — see [if-resolver.md](if-resolver.md) |
+| `engine/src/rulso/cli.py` | live | round-by-round CLI runner — see [cli.md](cli.md) |
 | `engine/src/rulso/labels.py` | stub | label recomputation |
 | `engine/src/rulso/persistence.py` | stub | WHEN / WHILE rule handling |
 | `engine/src/rulso/server.py` | stub | websocket entry point |
@@ -25,6 +26,7 @@ Python 3.12 package. `uv` managed. Pydantic v2 state, asyncio + `websockets` ser
 | `engine/tests/test_round_flow.py` | live | round-flow phase transitions, dealer rotation, burn tick |
 | `engine/tests/test_resolver.py` | live | grammar render, SUBJECT scope, HAS evaluation, effect stub |
 | `engine/tests/test_random_bot.py` | live | random bot: slot compat, MUTE, dice, discard, 1000-seed invariant |
+| `engine/tests/test_cli_smoke.py` | live | CLI runner: in-process smoke + round-cap exit code |
 
 ## Commands
 
