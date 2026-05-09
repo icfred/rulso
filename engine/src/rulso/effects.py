@@ -2,7 +2,7 @@
 
 ``resolve_if_rule`` is the single public entry point. It scopes a rule's
 SUBJECT to a set of player ids, evaluates ``HAS [QUANT] [NOUN]`` against each
-scoped player, and applies the M1 stub effect (+1 chip) to every satisfying
+scoped player, and applies the M1.5 stub effect (+1 VP) to every satisfying
 player. The real effect catalogue lands with ``cards.yaml`` in M2.
 
 Pure function: input ``GameState`` is never mutated; a new state is returned.
@@ -23,10 +23,10 @@ _LABEL_NAMES: frozenset[str] = frozenset(
 # M1 NOUN vocabulary — resource name → ``Player`` attribute.
 _NOUN_RESOURCES: dict[str, str] = {"CHIPS": "chips", "VP": "vp"}
 
-# M1 stub effect: each satisfying player gains this many chips. Sufficient to
-# prove the resolver pipeline is wired end-to-end; real effect application
-# (driven by ``revealed_effect`` + cards.yaml) lands in M2.
-_STUB_CHIP_GAIN: int = 1
+# M1.5 stub effect: each satisfying player gains this many VP. Awarding VP
+# (rather than chips) lets games actually terminate at VP_TO_WIN. Real effect
+# application (driven by ``revealed_effect`` + cards.yaml) lands in M2.
+_STUB_VP_GAIN: int = 1
 
 
 def resolve_if_rule(state: GameState, rule: RuleBuilder) -> GameState:
@@ -36,7 +36,7 @@ def resolve_if_rule(state: GameState, rule: RuleBuilder) -> GameState:
       1. Render the rule (``grammar.render_if_rule``).
       2. Scope SUBJECT → tuple of player ids.
       3. Evaluate ``HAS [QUANT] [NOUN]`` for each scoped player.
-      4. Apply the M1 stub effect (+1 chip) to every satisfying player.
+      4. Apply the M1.5 stub effect (+1 VP) to every satisfying player.
 
     Unassigned label SUBJECTs (M1: all labels) and HAS-false branches return
     the input state unchanged.
@@ -110,9 +110,9 @@ def _compare(value: int, op: str, threshold: int) -> bool:
 
 
 def _apply_stub_effect(state: GameState, matching_ids: frozenset[str]) -> GameState:
-    """M1 stub: +``_STUB_CHIP_GAIN`` chips to every player in ``matching_ids``."""
+    """M1.5 stub: +``_STUB_VP_GAIN`` VP to every player in ``matching_ids``."""
     new_players = tuple(
-        p.model_copy(update={"chips": p.chips + _STUB_CHIP_GAIN}) if p.id in matching_ids else p
+        p.model_copy(update={"vp": p.vp + _STUB_VP_GAIN}) if p.id in matching_ids else p
         for p in state.players
     )
     return state.model_copy(update={"players": new_players})
