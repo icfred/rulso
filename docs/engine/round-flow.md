@@ -48,7 +48,7 @@ application are stubbed.
 - **JOKER attachment** (`resolve` step 5): raises `NotImplementedError("M2: joker attachment")` if `active_rule.joker_attached` is set. M1 never attaches.
 - **Effect application** (`resolve` steps 1-7): no-op; rule render, scope, and effects deferred.
 - **Hand refill** (`build` step 4, `resolve` step 12): no-op; deck is empty in M1.
-- **Label recompute** (`round_start` step 3, `resolve` step 8): delegated to `labels.py` stub returning unassigned.
+- **Label recompute** (`round_start` step 3): calls `labels.recompute_labels` (live for LEADER/WOUNDED per M1.5). Result is currently unconsumed — `effects._scope_subject` still returns `frozenset()` for label SUBJECTs; wiring tracked separately. `resolve` step 8 still uncalled.
 - **Goal claim** (`resolve` step 7): no-op; goals deferred.
 - **Win check** (`resolve` step 9): scans `vp >= VP_TO_WIN`; transitions to `END` if found.
 - **Card legality / hand membership** in `play_card`: not checked. Only slot type-match enforced.

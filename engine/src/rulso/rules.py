@@ -10,6 +10,7 @@ All functions return a new ``GameState``; the input state is never mutated.
 
 from __future__ import annotations
 
+from rulso import labels
 from rulso.state import (
     BURN_TICK,
     PLAYER_COUNT,
@@ -100,7 +101,11 @@ def enter_round_start(state: GameState) -> GameState:
     new_round = state.round_number + 1
     # Step 2: BURN tick + MUTE expiry.
     players = tuple(_apply_burn_tick(p) for p in state.players)
-    # Step 3: label recompute — labels.py stub returns unassigned in M1.
+    # Step 3: recompute floating labels (LEADER/WOUNDED live, others M2).
+    # Result is intentionally unconsumed: effects._scope_subject still returns
+    # frozenset() for label SUBJECTs; wiring labels into scope is a separate
+    # ticket. See docs/engine/labels.md.
+    labels.recompute_labels(state.model_copy(update={"players": players}))
     # Step 4: WHILE-rule tick — M1 has no persistent rules; guard the path.
     if state.persistent_rules:
         raise NotImplementedError("M2: persistent rule WHILE tick")
