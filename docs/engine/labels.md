@@ -1,4 +1,4 @@
-_Last edited: 2026-05-09 by RUL-19_
+_Last edited: 2026-05-10 by RUL-22_
 
 # labels.py — floating-label computation
 
@@ -37,12 +37,12 @@ Ties → all tied players hold the label. Diverges from `design/state.md`'s
 | `state.players` empty | every key → `frozenset()` |
 | All players tied on vp / chips | every player id in `LEADER` / `WOUNDED` |
 
-### Call site
+### Call sites
 
-`rules.enter_round_start` step 3 invokes `recompute_labels` on the post-burn-tick
-players. The return value is currently unconsumed: `effects._scope_subject`
-still returns `frozenset()` for any label-name SUBJECT. Wiring labels into
-SUBJECT scoping is a separate ticket.
+- `rules.enter_round_start` step 3 invokes `recompute_labels` on the post-burn-tick players (canonical design step 3 hook). M1 has no live consumer here — WHILE-rule ticks are M2.
+- `effects.resolve_if_rule(state, rule, labels=...)` accepts a pre-computed mapping; `_scope_subject` looks up label SUBJECTs against it. When `labels=None`, the resolver recomputes from `state` (RUL-22). See `docs/engine/if-resolver.md`.
+
+Labels are never stored on `GameState` (ADR-0001). They flow as a transient parameter from caller to resolver.
 
 ### Tests
 

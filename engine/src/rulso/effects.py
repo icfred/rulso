@@ -11,14 +11,8 @@ Pure function: input ``GameState`` is never mutated; a new state is returned.
 from __future__ import annotations
 
 from rulso.grammar import IfRule, render_if_rule
+from rulso.labels import LABEL_NAMES, recompute_labels
 from rulso.state import Card, GameState, Player, RuleBuilder
-
-# Floating labels per design/state.md "Labels (computed, not stored)".
-# labels.py is a stub for M1: every label is unassigned, so any rule whose
-# SUBJECT references a label resolves to "no matches".
-_LABEL_NAMES: frozenset[str] = frozenset(
-    {"THE LEADER", "THE WOUNDED", "THE GENEROUS", "THE CURSED"}
-)
 
 # M1 NOUN vocabulary — resource name → ``Player`` attribute.
 _NOUN_RESOURCES: dict[str, str] = {"CHIPS": "chips", "VP": "vp"}
@@ -29,20 +23,33 @@ _NOUN_RESOURCES: dict[str, str] = {"CHIPS": "chips", "VP": "vp"}
 _STUB_VP_GAIN: int = 1
 
 
-def resolve_if_rule(state: GameState, rule: RuleBuilder) -> GameState:
+def resolve_if_rule(
+    state: GameState,
+    rule: RuleBuilder,
+    labels: dict[str, frozenset[str]] | None = None,
+) -> GameState:
     """Resolve an IF rule against ``state`` and return the updated state.
 
     Pipeline:
       1. Render the rule (``grammar.render_if_rule``).
-      2. Scope SUBJECT → tuple of player ids.
+      2. Scope SUBJECT → frozenset of player ids (label-aware).
       3. Evaluate ``HAS [QUANT] [NOUN]`` for each scoped player.
       4. Apply the M1.5 stub effect (+1 VP) to every satisfying player.
 
-    Unassigned label SUBJECTs (M1: all labels) and HAS-false branches return
-    the input state unchanged.
+    ``labels`` is an optional pre-computed label-name → frozenset[player_id]
+    mapping (the shape returned by ``rulso.labels.recompute_labels``). When
+    omitted, the resolver recomputes from ``state``. Pass it explicitly when a
+    caller already holds the round's labels (e.g. ``rules.enter_resolve``)
+    to avoid double computation. Labels are never stored on ``GameState``
+    (per ADR-0001 / ``design/state.md`` "computed, not stored").
+
+    SUBJECTs scoped to an empty label set and HAS-false branches return the
+    input state unchanged.
     """
     structured = render_if_rule(rule)
-    scoped = _scope_subject(state, structured.subject)
+    if labels is None:
+        labels = recompute_labels(state)
+    scoped = _scope_subject(state, structured.subject, labels)
     if not scoped:
         return state
     matching = frozenset(
@@ -53,20 +60,26 @@ def resolve_if_rule(state: GameState, rule: RuleBuilder) -> GameState:
     return _apply_stub_effect(state, matching)
 
 
-def _scope_subject(state: GameState, subject: Card) -> frozenset[str]:
+def _scope_subject(
+    state: GameState,
+    subject: Card,
+    labels: dict[str, frozenset[str]],
+) -> frozenset[str]:
     """Resolve a SUBJECT card to the set of player ids in scope.
 
-    M1 conventions on the SUBJECT card's ``name``:
-      * One of the four label names → label scope. M1 labels are always
-        unassigned (per labels.py stub), so this returns ``frozenset()``.
-      * Any other value is treated as a literal player id; matches the
-        ``Player`` with that id, or ``frozenset()`` if no such player.
+    ``subject.name`` controls the scope:
+      * One of ``labels.LABEL_NAMES`` → look up that label in ``labels``.
+        Live labels (LEADER, WOUNDED) return the holders for the round; M2-
+        stubbed labels (GENEROUS, CURSED, MARKED, CHAINED) return ``frozenset()``
+        until their derivations land.
+      * Any other value → literal player id; matches the ``Player`` with that
+        id, or ``frozenset()`` if no such player.
 
-    Polymorphic SUBJECTs (e.g., ``ANYONE``, ``EACH PLAYER``) land with the
+    Polymorphic SUBJECTs (e.g. ``ANYONE``, ``EACH PLAYER``) land with the
     card catalogue in M2.
     """
-    if subject.name in _LABEL_NAMES:
-        return frozenset()
+    if subject.name in LABEL_NAMES:
+        return labels.get(subject.name, frozenset())
     return frozenset(p.id for p in state.players if p.id == subject.name)
 
 

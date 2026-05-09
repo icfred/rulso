@@ -1,12 +1,16 @@
-"""Resolver-corner smoke (RUL-12).
+"""Resolver-corner smoke (RUL-12, label-aware after RUL-22).
 
 Two cross-cutting invariants from M1's DoD:
   * Failed-rule path leaves player chips/VP and active goals untouched, then
     rotates the dealer. (Driven through ``rules.py``.)
-  * Unassigned-label SUBJECT resolves to no matches and no state mutation.
-    (Driven directly through ``effects.resolve_if_rule`` with a grammar-
-    compatible ``RuleBuilder`` — the M1 stub rule in ``rules.py`` uses
-    different slot names; reconciliation is RUL-18's job.)
+  * M2-stub label SUBJECT (GENEROUS / CURSED / MARKED / CHAINED) resolves to
+    no matches and no state mutation. (Driven directly through
+    ``effects.resolve_if_rule`` with a grammar-compatible ``RuleBuilder`` —
+    the M1 stub rule in ``rules.py`` uses different slot names; reconciliation
+    is RUL-18's job.)
+
+LEADER and WOUNDED are live (RUL-19) and now actually fire (RUL-22), so they
+are exercised in ``test_resolver.py`` instead.
 """
 
 from __future__ import annotations
@@ -24,7 +28,8 @@ from rulso.state import (
     Slot,
 )
 
-_LABELS = ("THE LEADER", "THE WOUNDED", "THE GENEROUS", "THE CURSED")
+# M2-stub labels: still empty frozenset until their derivations land.
+_M2_STUB_LABELS = ("THE GENEROUS", "THE CURSED", "THE MARKED", "THE CHAINED")
 
 
 # --- Grammar-compatible RuleBuilder fixture ---------------------------------
@@ -72,13 +77,13 @@ def _state_with_goals(goal_count: int = 3) -> GameState:
     return GameState(players=players, active_goals=goals)
 
 
-# --- Unassigned-label SUBJECT: no scope, no effect, no goal claim -----------
+# --- M2-stub label SUBJECT: empty scope, no effect, no goal claim -----------
 
 
-def test_each_unassigned_label_subject_leaves_state_identical() -> None:
-    """All four labels are unassigned in M1 → resolve is a state-equality no-op."""
+def test_each_m2_stub_label_subject_leaves_state_identical() -> None:
+    """M2-stub labels are still empty → resolve is a state-equality no-op."""
     state = _state_with_goals()
-    for label in _LABELS:
+    for label in _M2_STUB_LABELS:
         rule = _if_rule(label, "GE", 0, "CHIPS")
         new_state = resolve_if_rule(state, rule)
         # Equality on the frozen Pydantic state covers players, goals, decks,
@@ -86,9 +91,12 @@ def test_each_unassigned_label_subject_leaves_state_identical() -> None:
         assert new_state == state, f"label {label!r} unexpectedly mutated state"
 
 
-def test_unassigned_label_does_not_consume_active_goals() -> None:
-    """Goals are face-up substrate; a failed scope must not discard or replace them."""
+def test_live_label_firing_does_not_consume_active_goals() -> None:
+    """Goals are face-up substrate; resolver firing must not discard or replace them."""
     state = _state_with_goals(goal_count=3)
+    # All four default players tie at vp=0, so all hold THE LEADER and the
+    # rule fires for each. Goal substrate should still be untouched in M1.5
+    # (real goal-claim machinery is M2).
     rule = _if_rule("THE LEADER", "GE", 0, "CHIPS")
     new_state = resolve_if_rule(state, rule)
     assert new_state.active_goals == state.active_goals

@@ -101,10 +101,12 @@ def enter_round_start(state: GameState) -> GameState:
     new_round = state.round_number + 1
     # Step 2: BURN tick + MUTE expiry.
     players = tuple(_apply_burn_tick(p) for p in state.players)
-    # Step 3: recompute floating labels (LEADER/WOUNDED live, others M2).
-    # Result is intentionally unconsumed: effects._scope_subject still returns
-    # frozenset() for label SUBJECTs; wiring labels into scope is a separate
-    # ticket. See docs/engine/labels.md.
+    # Step 3: recompute floating labels (ADR-0001 — computed-not-stored).
+    # M1 consumers: none directly here (no WHILE rules yet, and the M1
+    # resolver isn't wired into enter_resolve). The recompute is preserved
+    # as the canonical design step 3 hook. The resolver itself takes labels
+    # as a transient parameter via effects.resolve_if_rule(state, rule,
+    # labels=...); see docs/engine/labels.md.
     labels.recompute_labels(state.model_copy(update={"players": players}))
     # Step 4: WHILE-rule tick — M1 has no persistent rules; guard the path.
     if state.persistent_rules:

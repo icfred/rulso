@@ -1,9 +1,10 @@
-"""Tests for grammar.render_if_rule and effects.resolve_if_rule (RUL-9)."""
+"""Tests for grammar.render_if_rule and effects.resolve_if_rule (RUL-9, RUL-22)."""
 
 import pytest
 
 from rulso.effects import resolve_if_rule
 from rulso.grammar import IfRule, render_if_rule
+from rulso.labels import recompute_labels
 from rulso.state import (
     Card,
     CardType,
@@ -134,36 +135,90 @@ def test_scope_single_player_unknown_id_is_no_match() -> None:
     assert new == state
 
 
-# --- effects.resolve_if_rule — scope: unassigned label (no-op) ---------------
+# --- effects.resolve_if_rule — scope: live labels (RUL-22) -------------------
 
 
-def test_label_subject_the_leader_is_unassigned_no_effect() -> None:
-    """Labels are unassigned in M1 (labels.py stub) → no matches → no effect."""
-    state = _state(_player("p0"), _player("p1"))
+def test_label_subject_leader_single_holder_fires_for_holder() -> None:
+    """LEADER (argmax vp) with one holder → effect applies to that player only."""
+    state = _state(_player("p0", vp=0), _player("p1", vp=2), _player("p2", vp=1))
     rule = _if_rule(_subject("THE LEADER"), _quant("GE", 0), _noun("CHIPS"))
     new = resolve_if_rule(state, rule)
-    assert new == state
+    assert new.players[0].vp == 0
+    assert new.players[1].vp == 3  # +1 from stub effect
+    assert new.players[2].vp == 1
 
 
-def test_label_subject_the_wounded_is_unassigned_no_effect() -> None:
-    state = _state(_player("p0"), _player("p1"))
-    rule = _if_rule(_subject("THE WOUNDED"), _quant("LT", 999), _noun("CHIPS"))
+def test_label_subject_leader_tied_holders_all_fire() -> None:
+    """LEADER ties → every tied player holds the label and fires (ADR-0001)."""
+    state = _state(_player("p0", vp=2), _player("p1", vp=2), _player("p2", vp=1))
+    rule = _if_rule(_subject("THE LEADER"), _quant("GE", 0), _noun("CHIPS"))
+    new = resolve_if_rule(state, rule)
+    assert new.players[0].vp == 3
+    assert new.players[1].vp == 3
+    assert new.players[2].vp == 1
+
+
+def test_label_subject_wounded_empty_player_set_is_no_op() -> None:
+    """WOUNDED on a player-less state → empty label → no effect."""
+    state = GameState()
+    rule = _if_rule(_subject("THE WOUNDED"), _quant("LE", 0), _noun("CHIPS"))
     new = resolve_if_rule(state, rule)
     assert new == state
 
 
-def test_label_subject_the_generous_is_unassigned_no_effect() -> None:
+def test_label_subject_wounded_filters_by_has() -> None:
+    """WOUNDED holders that fail HAS don't fire; the scope is still populated."""
+    state = _state(_player("p0", chips=10), _player("p1", chips=50))
+    rule = _if_rule(_subject("THE WOUNDED"), _quant("GE", 100), _noun("CHIPS"))
+    new = resolve_if_rule(state, rule)
+    assert new == state  # scope = {p0}; HAS chips GE 100 fails
+
+
+def test_label_subject_generous_m2_stub_no_effect() -> None:
+    """GENEROUS is an M2 stub (empty frozenset) — no holders → no effect."""
     state = _state(_player("p0"), _player("p1"))
     rule = _if_rule(_subject("THE GENEROUS"), _quant("GE", 0), _noun("VP"))
     new = resolve_if_rule(state, rule)
     assert new == state
 
 
-def test_label_subject_the_cursed_is_unassigned_no_effect() -> None:
+def test_label_subject_cursed_m2_stub_no_effect() -> None:
+    """CURSED is an M2 stub — no holders → no effect."""
     state = _state(_player("p0"), _player("p1"))
     rule = _if_rule(_subject("THE CURSED"), _quant("GT", 0), _noun("VP"))
     new = resolve_if_rule(state, rule)
     assert new == state
+
+
+def test_label_subject_uses_explicit_labels_argument() -> None:
+    """Explicit ``labels`` arg overrides recompute — caller controls scope."""
+    state = _state(_player("p0", vp=2), _player("p1", vp=0))
+    rule = _if_rule(_subject("THE LEADER"), _quant("GE", 0), _noun("CHIPS"))
+    # Override: claim p1 holds LEADER even though p0 has higher vp.
+    forced = {
+        name: frozenset()
+        for name in (
+            "THE LEADER",
+            "THE WOUNDED",
+            "THE GENEROUS",
+            "THE CURSED",
+            "THE MARKED",
+            "THE CHAINED",
+        )
+    }
+    forced["THE LEADER"] = frozenset({"p1"})
+    new = resolve_if_rule(state, rule, labels=forced)
+    assert new.players[0].vp == 2  # untouched
+    assert new.players[1].vp == 1  # +1 from stub
+
+
+def test_label_subject_explicit_labels_match_recompute() -> None:
+    """Pre-computed labels === auto-recomputed labels for the same state."""
+    state = _state(_player("p0", vp=2), _player("p1", vp=0))
+    rule = _if_rule(_subject("THE LEADER"), _quant("GE", 0), _noun("CHIPS"))
+    auto = resolve_if_rule(state, rule)
+    explicit = resolve_if_rule(state, rule, labels=recompute_labels(state))
+    assert auto == explicit
 
 
 # --- effects.resolve_if_rule — various HAS comparators -----------------------
