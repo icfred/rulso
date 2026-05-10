@@ -48,9 +48,39 @@ Definition of done:
 - Status tokens (BURN, MUTE, BLESSED, MARKED, CHAINED) apply, decay, and clear per `state.md`
 - SHOP round runs every 3 rounds with correct purchase order
 
-## M3: Smart bot
+## M2.5: Mechanic gaps (pre-M3 sweep)
 
-**Goal**: ISMCTS bot plays well enough that solo testing surfaces real design feedback.
+**Goal**: close M2 mechanics that ship in code but not in play. Tracked as `parent = RUL-24` follow-ups, not a separate Linear milestone.
+
+Definition of done:
+- SHOP content lands in `cards.yaml shop_cards:` (RUL-56) — SHOP fires every 3 rounds with non-empty offers
+- MARKED is consumed in `EACH_PLAYER` scoping per `design/status-tokens.md` (narrow to MARKED holders when ≥1; otherwise fire normally)
+- `cards.yaml effect_cards:` lists `eff.marked.apply` and `eff.chained.clear` so MARKED can be applied and CHAINED can be cleared in production runs
+- `bots.md` dice-mode drift fixed (RUL-57)
+
+## M3: Foundation/Minimal Client
+
+**Goal**: a human can sit down, read the board, make a meaningful decision, and reach a winner. Ugly but playable. See `docs/decisions/ADR-0006-foundation-client-before-ismcts.md` for the milestone-reorder rationale.
+
+Definition of done:
+- Engine WebSocket protocol (`engine/src/rulso/protocol.py`): Pydantic envelopes for state-broadcast and action-submit
+- Engine WebSocket server (`engine/src/rulso/server.py`): asyncio loop, one human seat per connection, bots fill the rest
+- TypeScript-from-Pydantic type generation pipeline (`scripts/regenerate-types.sh`)
+- `client/` bootstrapped with Vite + Pixi v8 + TypeScript per `tech.md`
+- Client connects, parses state, renders: hand with full card text, active rule with semantic preview ("if you complete this rule with GT, it reads `IF p2 GT 2d6 ROUNDS → eff.noop`"), 3 active goal cards with claim conditions visible, all 4 opponents' public state (chips, VP, hand size, status tokens, floating labels), revealed effect for the round
+- Input: click-to-play onto a slot, discard via card-toggle (not flat enumeration), JOKER attachment, dice-mode pick where the comparator is OP-only
+- Basic dice-roll text/output (no animation)
+- `bots.human` rewired through the WebSocket; `bots.random` continues to fill the other three seats
+- Game playable from start to win without console errors
+
+Out of scope (owned by M5):
+- Aegean palette, JetBrains Mono / Inter typography
+- Animations (card draw, slot fill, rule resolve, dice roll, status apply, VP claim)
+- Sound, iconography, drag-drop, mobile/touch, settings UI
+
+## M4: Smart bot (ISMCTS)
+
+**Goal**: ISMCTS bot plays well enough that solo testing surfaces real design feedback. ISMCTS payoff design draws on M3 playtest signal — heuristics for "what counts as a good move" land after a human has played 20+ hands, not before.
 
 Definition of done:
 - `bots/ismcts.py` with information-set sampling from public state
@@ -59,23 +89,6 @@ Definition of done:
 - Plays a full CLI game without crashing or hanging
 - Sampling biased by visible info: chip counts, build history, label positions
 - Logs decision rationale (for debugging) — top N candidate moves with projected VP delta
-
-## M4: Pixi client
-
-**Goal**: Game playable end-to-end in browser.
-
-Definition of done:
-- `client/` repo bootstrapped with Vite + Pixi v8 + TypeScript
-- Generated-types pipeline working (`scripts/regenerate-types.sh`)
-- Websocket client connects to engine, receives state, renders
-- Table layout per `aesthetic.md` (active rule center, opponents around, hand bottom)
-- Cards: hover, drag, drop into rule slot
-- UI greys out illegal cards (slot-compat-aware)
-- Dice rolls visualized
-- Rule resolves with visible state change
-- Goal cards visible and update on claim
-- Status tokens visible per opponent
-- Game playable from start to win without console errors
 
 ## M5: Polish
 
@@ -86,6 +99,7 @@ Definition of done:
 - Animations: card draw, slot fill, rule resolve, dice roll, status apply, VP claim
 - Sound: all events from `aesthetic.md` audio table fire
 - Iconography: pixel glyphs for all status tokens
+- Drag-drop card placement
 - Solo playthrough against 3 ISMCTS bots feels like the game described in `about.md`
 
 ## Out of scope (post-MVP)
