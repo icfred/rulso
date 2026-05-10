@@ -17,7 +17,17 @@ Linear board: https://linear.app/rulso (team `RUL`, projects: Engine / Infra / B
 
 ## In flight
 
-None. M2 Phase 2 SHIPPED (RUL-31 cards/state.py substrate, RUL-32 WHEN+WHILE lifecycle, RUL-33 GENEROUS+CURSED labels — all merged 2026-05-10). Awaiting user sign-off on Phase 3 ticket shape before dispatch.
+**RUL-34** — Re-contract M1.5 watchable smoke for M2 transition (Phase 3 prep). Hand-over emitted; awaiting worker dispatch. Phase 3 fan blocked until this lands (see "Phase 3 prep" below).
+
+M2 Phase 2 SHIPPED (RUL-31 cards/state.py substrate, RUL-32 WHEN+WHILE lifecycle, RUL-33 GENEROUS+CURSED labels — all merged 2026-05-10).
+
+## Phase 3 prep — why RUL-34 must land first
+
+RUL-31's worker probe found that even silently-safe deck additions (ANYONE/EACH no-op via empty scope; JOKERs sit in-hand) regress the M1.5 watchable smoke 6/10 → 0/10 winners by diluting the rule-fire pool. Each Phase 3 ticket extends `cards.yaml deck:` for its consumer, so the smoke would go red on the first Phase 3 PR even when the PR is correct.
+
+**RUL-34** re-contracts the M1.5 smoke as a regression detector during Phase 3 (drops `_MIN_WINNERS` to 0; widens resolve floors to absorb dilution). The "real watchable bar" moves to **RUL-35** (M2 watchable smoke), which lands as the Phase 3 tail.
+
+Sequence: RUL-34 → merge → Phase 3 fan (D–K, parallel) → merge → RUL-35.
 
 ## M2 Phase 2 Done summary
 
@@ -45,7 +55,7 @@ Phase 2 substrate is in. Phase 3 wires consumers; this is the ~8-wide fan. **All
 | **J — JOKER attachment** | Implement JOKER:PERSIST_WHEN / PERSIST_WHILE / DOUBLE / ECHO. Persist variants promote the rule's CONDITION to WHEN/WHILE via `persistence.add_persistent_rule`. DOUBLE / ECHO modify effect application count. **Extends `deck:`** with jkr.* copies. **Depends on RUL-32** (persistence.add_persistent_rule). | `engine/src/rulso/effects.py`, `engine/src/rulso/legality.py` (JOKERs are legal as a 4th play type), `engine/src/rulso/bots/random.py` (bot picks legal JOKER), tests | yes (RUL-32 done) |
 | **K — goal cards engine** | Implement the goal-claim predicate registry per RUL-28's spike: `chips_at_least_75`, `chips_under_10`, `rules_completed_at_least_3`, `gifts_at_least_2`, `burn_at_least_2`, `free_agent`, `full_hand`. Per-round claim check; awards `vp_award`; `single` discards + replenishes from `goal_deck`, `renewable` stays. Wires `rules.start_game` to seed `goal_deck` + `active_goals` from `load_goal_cards`. | new `engine/src/rulso/goals.py`, `engine/src/rulso/rules.py` (start_game seeding + per-round claim hook), tests | yes |
 
-After Phase 3 fan: SHOP round + M2 watchable smoke (single-track tail).
+After Phase 3 fan: **RUL-35** (M2 watchable smoke) + SHOP round (single-track tail).
 
 ### Phase 3 cross-cutting requirement
 
