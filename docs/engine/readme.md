@@ -1,4 +1,4 @@
-_Last edited: 2026-05-10 by RUL-23 (sweep for RUL-18)_
+_Last edited: 2026-05-10 by RUL-23 (sweep batching RUL-21, RUL-26)_
 
 # engine
 
@@ -18,7 +18,7 @@ Python 3.12 package. `uv` managed. Pydantic v2 state, asyncio + `websockets` ser
 | `engine/src/rulso/labels.py` | live | LEADER/WOUNDED computation (M1.5) — see [labels.md](labels.md) |
 | `engine/src/rulso/cards.py` | live | yaml loader + deck builder for the M1.5 starter card subset (RUL-17); reads `design/cards.yaml` |
 | `engine/src/rulso/legality.py` | live | small helpers for legal-action selection (M1.5: `first_card_of_type`) — see [legality.md](legality.md) |
-| `engine/src/rulso/persistence.py` | stub | WHEN / WHILE rule handling |
+| `engine/src/rulso/persistence.py` | live | WHEN/WHILE persistent-rule scaffolding (M2 substrate; bodies stubbed pending feature tickets) — see [persistence.md](persistence.md) |
 | `engine/src/rulso/server.py` | stub | websocket entry point |
 | `engine/src/rulso/protocol.py` | stub | engine↔client message types |
 | `engine/src/rulso/bots/__init__.py` | stub | bots package |
@@ -34,6 +34,8 @@ Python 3.12 package. `uv` managed. Pydantic v2 state, asyncio + `websockets` ser
 | `engine/tests/test_smoke_resolution_edges.py` | live | resolver corners: unassigned label + failed-rule invariants — see [m1-smoke.md](m1-smoke.md) |
 | `engine/tests/test_labels.py` | live | label recomputation: leader/wounded ties, empty player set |
 | `engine/tests/test_cards_loader.py` | live | yaml-deck loader: schema validation, card-type coverage, frozen contract |
+| `engine/tests/test_persistence.py` | live | persistence scaffolding: capacity/eviction, empty-list no-op |
+| `engine/tests/test_m1_5_watchable.py` | live | M1.5 watchable smoke: 10-seed sweep asserts winners emerge — see [m1-5-smoke.md](m1-5-smoke.md) |
 
 ## Commands
 

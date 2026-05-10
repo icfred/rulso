@@ -44,25 +44,25 @@ Only `burn` is countable. The others are toggles — re-applying a token already
 Status-applying cards live in the **effect deck** (revealed at `round_start` step 6 by `rules.enter_round_start`). Status-clearing cards also live in the effect deck. Status apply/clear is **never** wired through SUBJECT/NOUN/MODIFIER fragments and **never** through JOKERs — they are post-resolve effect-card payloads.
 
 ### BURN
-- **Applies**: targeted-burn effects (e.g. `eff.burn_target`) — adds 1 BURN to one player chosen by effect-card payload (`THE LOSER`, scoped subject, etc.).
-- **Clears**: BURN-removal effect cards (`eff.douse`) — sets `burn = 0` on a target. Removing one-by-one is deferred (M2 starter clears all at once).
+- **Applies**: targeted-burn effects (e.g. `eff.burn.apply.1`) — adds 1 BURN to one player chosen by effect-card payload (`THE LOSER`, scoped subject, etc.).
+- **Clears**: BURN-removal effect cards (`eff.burn.clear.1`) — sets `burn = 0` on a target. Removing one-by-one is deferred (M2 starter clears all at once).
 - **Stack semantics**: counter; multiple applies sum. `BURN_TICK = 5` chips per token at `round_start` step 2.
 
 ### MUTE
-- **Applies**: silencing effects (e.g. `eff.silence`) — sets `mute = True` on a target. The current round is the **applied** round; the **next** round's MODIFIER plays are blocked. Cleared at the start of the round after that.
+- **Applies**: silencing effects (e.g. `eff.mute.apply`) — sets `mute = True` on a target. The current round is the **applied** round; the **next** round's MODIFIER plays are blocked. Cleared at the start of the round after that.
 - **Clears**: natural-tick only (`round_start` step 2 — already implemented in `rules._apply_burn_tick`). No clearing card.
 
 ### BLESSED
-- **Applies**: blessing effects (e.g. `eff.bless`) — sets `blessed = True` on a target.
+- **Applies**: blessing effects (e.g. `eff.blessed.apply`) — sets `blessed = True` on a target.
 - **Clears**: on-use only — fires when a chip-loss effect targets the bearer. No natural decay; no clearing card.
 
 ### MARKED
-- **Applies**: marking effects (e.g. `eff.mark`) — sets `marked = True` on one or more targets, payload-defined.
+- **Applies**: marking effects (e.g. `eff.marked.apply`) — sets `marked = True` on one or more targets, payload-defined.
 - **Clears**: natural-tick only (`resolve` step 10 — "expire MARKED tokens" already named in `design/state.md`).
 
 ### CHAINED
-- **Applies**: chaining effects (e.g. `eff.chain`) — sets `chained = True` on a target.
-- **Clears**: removal effect cards only (`eff.unchain`). No natural decay.
+- **Applies**: chaining effects (e.g. `eff.chained.apply`) — sets `chained = True` on a target.
+- **Clears**: removal effect cards only (`eff.chained.clear`). No natural decay.
 
 Coordination with RUL-29 (effect-card spike): the effect-card catalogue should expose status-apply / status-clear payloads keyed on the field names `burn` / `mute` / `blessed` / `marked` / `chained` exactly. Any divergence in token naming silently no-ops the apply path at runtime (per `docs/workflow_lessons.md` "data-doc name check" lesson).
 
@@ -145,13 +145,13 @@ Effect-deck cards. **7 unique kinds**, justifying coverage of the 5 tokens + 2 c
 
 | id | name | applies / clears | target | M2 |
 |---|---|---|---|---|
-| `eff.burn_target` | `BURN_TARGET` | applies BURN +1 | one player (payload-scoped) | ✓ |
-| `eff.douse` | `DOUSE` | clears BURN (sets `burn = 0`) | one player | ✓ |
-| `eff.silence` | `SILENCE` | applies MUTE | one player | ✓ |
-| `eff.bless` | `BLESS` | applies BLESSED | one player | ✓ |
-| `eff.mark` | `MARK` | applies MARKED | one or more players (payload-scoped) | ✓ |
-| `eff.chain` | `CHAIN` | applies CHAINED | one player | ✓ |
-| `eff.unchain` | `UNCHAIN` | clears CHAINED | one player | ✓ |
+| `eff.burn.apply.1` | `APPLY_BURN:1` | applies BURN +1 | one player (payload-scoped) | ✓ |
+| `eff.burn.clear.1` | `CLEAR_BURN:1` | clears BURN (sets `burn = 0`) | one player | ✓ |
+| `eff.mute.apply` | `APPLY_MUTE` | applies MUTE | one player | ✓ |
+| `eff.blessed.apply` | `APPLY_BLESSED` | applies BLESSED | one player | ✓ |
+| `eff.marked.apply` | `APPLY_MARKED` | applies MARKED | one or more players (payload-scoped) | ✓ |
+| `eff.chained.apply` | `APPLY_CHAINED` | applies CHAINED | one player | ✓ |
+| `eff.chained.clear` | `CLEAR_CHAINED` | clears CHAINED | one player | ✓ |
 
 **Deck placement**: all 7 in the **effect deck** (`GameState.effect_deck`), revealed at `round_start` step 6. Rationale:
 - Effect cards land alongside the active rule and modify its outcome — status apply is the natural fit.
