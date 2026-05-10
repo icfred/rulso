@@ -27,6 +27,17 @@ def _card(cid: str, type_: CardType) -> Card:
 
 def _drive_to_first_build(seed: int = 0) -> GameState:
     state = start_game(seed)
+    # RUL-23 cross-cutting: inject a SUBJECT into the dealer's hand so the
+    # rule never fails at enter_round_start step 7. The randomly dealt
+    # seed-0 hand happened to contain a SUBJECT under the M1.5 deck (50
+    # cards, 18 SUBJECTs) but Phase 3 deck extensions reshuffle, breaking
+    # tests that rely on this lucky deal. Injection makes the helper
+    # seed-independent.
+    seed_subject = Card(id="subj.p0", type=CardType.SUBJECT, name="p0")
+    dealer = state.players[state.dealer_seat]
+    new_dealer = dealer.model_copy(update={"hand": (seed_subject,) + dealer.hand})
+    new_players = tuple(new_dealer if p.seat == state.dealer_seat else p for p in state.players)
+    state = state.model_copy(update={"players": new_players})
     return advance_phase(state)
 
 
