@@ -235,18 +235,22 @@ def test_default_main_deck_multiplies_copies() -> None:
     Composition is extended as Phase 3 consumer paths land. RUL-44 adds the
     six M2 polymorphic NOUNs at 2 copies each; RUL-42 (G) adds 5 OP-only
     comparator MODIFIERs at 2 copies each (ADR-0002); RUL-43 (H) adds 5
-    operator MODIFIERs at 2 copies each (ADR-0004). Pre-Phase-3 baseline
-    was 50 (6 SUBJECT × 3 + 2 NOUN × 4 + 12 MODIFIER × 2).
+    operator MODIFIERs at 2 copies each (ADR-0004); RUL-41 (F) adds the two
+    polymorphic SUBJECTs (`subj.anyone`, `subj.each`) at the standing 3-copy
+    SUBJECT cadence (ADR-0003). Pre-Phase-3 baseline was 50 (6 SUBJECT × 3 +
+    2 NOUN × 4 + 12 MODIFIER × 2).
     """
     decks = build_default_deck()
     counts: dict[str, int] = {}
     for c in decks.main:
         counts[c.id] = counts.get(c.id, 0) + 1
-    # 6 SUBJECT × 3 + 8 NOUN (2×4 M1.5 + 6×2 M2 RUL-44) + 12 MODIFIER × 2
-    # + 5 OP-only comparators × 2 (RUL-42) + 5 operator MODIFIERs × 2 (RUL-43)
-    # = 18 + 20 + 24 + 10 + 10 = 82.
-    assert sum(counts.values()) == 82
+    # 8 SUBJECT × 3 (6 M1.5 + 2 RUL-41 polymorphic) + 8 NOUN (2×4 M1.5 + 6×2
+    # M2 RUL-44) + 12 MODIFIER × 2 + 5 OP-only comparators × 2 (RUL-42) +
+    # 5 operator MODIFIERs × 2 (RUL-43) = 24 + 20 + 24 + 10 + 10 = 88.
+    assert sum(counts.values()) == 88
     assert counts["subj.p0"] == 3
+    assert counts["subj.anyone"] == 3
+    assert counts["subj.each"] == 3
     assert counts["noun.chips"] == 4
     assert counts["noun.cards"] == 2
     assert counts["noun.burn"] == 2
