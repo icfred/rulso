@@ -28,11 +28,10 @@ from __future__ import annotations
 import random
 
 from rulso import cards as cards_module
-from rulso import effects, goals, labels, legality, persistence
+from rulso import effects, goals, labels, legality, persistence, status
 from rulso.cards import ConditionTemplate
 from rulso.state import (
     ACTIVE_GOALS,
-    BURN_TICK,
     HAND_SIZE,
     PLAYER_COUNT,
     VP_TO_WIN,
@@ -154,8 +153,8 @@ def enter_round_start(state: GameState) -> GameState:
     fails immediately and the dealer rotates (rule never enters BUILD).
     """
     new_round = state.round_number + 1
-    # Step 2: BURN tick + MUTE expiry.
-    players = tuple(_apply_burn_tick(p) for p in state.players)
+    # Step 2: status tick — BURN drains chips, MUTE clears (RUL-40, RUL-30).
+    players = tuple(status.tick_round_start(p) for p in state.players)
     # Step 3: recompute floating labels (ADR-0001 — computed-not-stored).
     # The recompute is preserved as the canonical design step 3 hook; the
     # resolver receives labels as a transient parameter from enter_resolve.
@@ -269,14 +268,17 @@ def enter_resolve(state: GameState, *, rng: random.Random | None = None) -> Game
                 "active_rule": None,
             }
         )
-    # Step 10: cleanup — discard played fragments.
+    # Step 10: cleanup — discard played fragments and expire MARKED tokens
+    # (one-round lifetime per RUL-30 / design/state.md).
     discarded = tuple(s.filled_by for s in state.active_rule.slots if s.filled_by is not None)
+    cleaned_players = tuple(status.tick_resolve_end(p) for p in state.players)
     # Step 11: rotate dealer.
     new_dealer = (state.dealer_seat + 1) % PLAYER_COUNT
     # Step 12: refill hands.
     refill_rng = rng if rng is not None else random.Random()
     state_post_discard = state.model_copy(
         update={
+            "players": cleaned_players,
             "discard": state.discard + discarded,
         }
     )
@@ -477,14 +479,6 @@ def _fail_rule_and_rotate(state: GameState) -> GameState:
             "revealed_effect": None,
         }
     )
-
-
-def _apply_burn_tick(player: Player) -> Player:
-    """Step 2: lose ``BURN_TICK × burn_count`` chips and clear MUTE."""
-    burn = player.status.burn
-    new_chips = max(0, player.chips - BURN_TICK * burn)
-    new_status = player.status.model_copy(update={"mute": False})
-    return player.model_copy(update={"chips": new_chips, "status": new_status})
 
 
 def _check_winner(players: tuple[Player, ...]) -> Player | None:
