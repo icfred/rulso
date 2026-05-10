@@ -500,6 +500,7 @@ def _resolve_ready_state() -> GameState:
         active_seat=0,
         players=players,
         active_rule=rule,
+        revealed_effect=Card(id="eff.vp.gain.1", type=CardType.EFFECT, name="GAIN_VP:1"),
     )
 
 
