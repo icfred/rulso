@@ -87,6 +87,13 @@ def register_effect_kind(kind: str, handler: EffectHandler) -> None:
 
 # --- Public entry points ----------------------------------------------------
 
+# RUL-42 (G): OP-only comparator MODIFIERs per ADR-0002. The card encodes the
+# operator only; N is drawn at play time from 1d6 or 2d6 (player choice). The
+# rolled value lives on ``state.last_roll`` and is baked into a transient
+# ``OP:N`` quant card before evaluation — leaves the slot's ``filled_by``
+# untouched (so discard sees the original OP-only card on resolve cleanup).
+_OP_ONLY_COMPARATOR_NAMES: frozenset[str] = frozenset({"LT", "LE", "GT", "GE", "EQ"})
+
 
 def resolve_if_rule(
     state: GameState,
@@ -113,6 +120,9 @@ def resolve_if_rule(
     ``revealed_effect`` all return the input state unchanged.
     """
     structured = render_if_rule(rule)
+    # RUL-42 (G): OP-only comparator → bake the rolled N into a transient
+    # quant card per ADR-0002. The slot's filled_by is left untouched.
+    structured = _bake_quant_dice(structured, state)
     if labels is None:
         labels = recompute_labels(state)
     scoped = _scope_subject(state, structured.subject, labels)
@@ -382,15 +392,40 @@ def _parse_quant(quant: Card) -> tuple[str, int]:
 
     Operators: ``GE`` ≥, ``GT`` >, ``LE`` ≤, ``LT`` <, ``EQ`` ==.
 
-    Comparator MODIFIERs in the full game inline a dice roll (see
-    ``design/state.md``); the ``OP:N`` shorthand is M1's bridge until that
-    pipeline lands.
+    M1.5 baked-N comparators carry both fields in ``name``. M2 OP-only
+    comparators (per ADR-0002) draw N from dice at play time;
+    :func:`_bake_quant_dice` rewrites those into ``OP:N`` form before this
+    parser sees them, so by here every QUANT card carries an ``:N`` segment.
     """
     raw = quant.name
     if ":" not in raw:
         raise ValueError(f"QUANT card name {raw!r} not in form 'OP:N'")
     op, n = raw.split(":", 1)
     return op, int(n)
+
+
+def _bake_quant_dice(rule: IfRule, state: GameState) -> IfRule:
+    """Resolve OP-only comparator dice per ADR-0002.
+
+    If the QUANT card encodes an operator only (``LT`` / ``LE`` / ``GT`` /
+    ``GE`` / ``EQ`` — no ``:N`` segment), reads the drawn N from
+    ``state.last_roll.value`` and returns a new :class:`IfRule` with the QUANT
+    rebuilt as a transient ``OP:N`` card. Baked-N quants pass through
+    unchanged. Pure: input ``rule`` and ``state`` are not mutated.
+
+    Raises :class:`ValueError` if the QUANT is OP-only but ``state.last_roll``
+    is ``None`` — signals a missing ``play_card`` → roll wiring upstream.
+    """
+    quant = rule.quant
+    if quant.name not in _OP_ONLY_COMPARATOR_NAMES:
+        return rule
+    if state.last_roll is None:
+        raise ValueError(
+            f"OP-only comparator {quant.name!r} has no last_roll; "
+            "play_card must record the roll before resolve"
+        )
+    baked = quant.model_copy(update={"name": f"{quant.name}:{state.last_roll.value}"})
+    return rule.model_copy(update={"quant": baked})
 
 
 def _compare(value: int, op: str, threshold: int) -> bool:

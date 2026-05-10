@@ -40,6 +40,7 @@ from rulso.state import (
     CardType,
     GameState,
     GoalCard,
+    LastRoll,
     Phase,
     Play,
     Player,
@@ -47,6 +48,10 @@ from rulso.state import (
     RuleKind,
     Slot,
 )
+
+# RUL-42 (G): OP-only comparator names (ADR-0002). Mirrors the set in
+# effects.py — kept local to avoid a back-import; the two are co-evolved.
+_OP_ONLY_COMPARATOR_NAMES: frozenset[str] = frozenset({"LT", "LE", "GT", "GE", "EQ"})
 
 # --- Round-flow placeholder effect card -------------------------------------
 # Round-flow draws an effect card from ``state.effect_deck`` at round_start
@@ -288,12 +293,25 @@ def enter_resolve(state: GameState, *, rng: random.Random | None = None) -> Game
     )
 
 
-def play_card(state: GameState, card: Card, slot_name: str) -> GameState:
+def play_card(
+    state: GameState,
+    card: Card,
+    slot_name: str,
+    *,
+    dice_mode: int | None = None,
+    dice_roll: int | None = None,
+) -> GameState:
     """Active player plays ``card`` into ``slot_name``; advances the build turn.
 
     Validates phase=BUILD, slot exists, slot is unfilled, card type matches
     slot type. Removes ``card`` from the active player's hand by id+identity
     (the first matching instance, in case of duplicates).
+
+    RUL-42 (G) — comparator dice (ADR-0002): when ``card`` is an OP-only
+    comparator MODIFIER (``card.name`` in ``{LT, LE, GT, GE, EQ}``),
+    ``dice_mode`` (1 for 1d6, 2 for 2d6) and ``dice_roll`` (the drawn N) are
+    required. Both are recorded on ``state.last_roll`` so the resolver can
+    bake N into the QUANT slot. Both are ignored for non-OP-only cards.
     """
     if state.phase is not Phase.BUILD:
         raise ValueError(f"play_card requires phase=BUILD, got {state.phase}")
@@ -328,14 +346,22 @@ def play_card(state: GameState, card: Card, slot_name: str) -> GameState:
     new_players = (
         state.players[: state.active_seat] + (new_player,) + state.players[state.active_seat + 1 :]
     )
-    return _build_tick(
-        state.model_copy(
-            update={
-                "active_rule": new_rule,
-                "players": new_players,
-            }
+    updates: dict[str, object] = {
+        "active_rule": new_rule,
+        "players": new_players,
+    }
+    # RUL-42 (G): record the dice roll for OP-only comparators per ADR-0002.
+    if card.name in _OP_ONLY_COMPARATOR_NAMES:
+        if dice_mode is None or dice_roll is None:
+            raise ValueError(f"OP-only comparator {card.name!r} requires dice_mode and dice_roll")
+        if dice_mode not in (1, 2):
+            raise ValueError(f"dice_mode must be 1 or 2, got {dice_mode!r}")
+        updates["last_roll"] = LastRoll(
+            player_id=active_player.id,
+            value=dice_roll,
+            dice_count=dice_mode,
         )
-    )
+    return _build_tick(state.model_copy(update=updates))
 
 
 def pass_turn(state: GameState) -> GameState:

@@ -261,3 +261,9 @@ deck:
   - { id: mod.cmp.ge.5, copies: 2 }
   - { id: mod.cmp.ge.10, copies: 2 }
   - { id: mod.cmp.eq.5, copies: 2 }
+  # RUL-42 (G): M2 OP-only comparators per ADR-0002 — N drawn from dice at play.
+  - { id: mod.cmp.lt, copies: 2 }
+  - { id: mod.cmp.le, copies: 2 }
+  - { id: mod.cmp.gt, copies: 2 }
+  - { id: mod.cmp.ge, copies: 2 }
+  - { id: mod.cmp.eq, copies: 2 }

@@ -233,21 +233,26 @@ def test_default_main_deck_multiplies_copies() -> None:
     """Main deck composition matches the yaml ``deck:`` section.
 
     Composition is extended as Phase 3 consumer paths land. RUL-44 adds the
-    six M2 polymorphic NOUNs at 2 copies each — pre-Phase-3 baseline was
-    50 (6 SUBJECT × 3 + 2 NOUN × 4 + 12 MODIFIER × 2).
+    six M2 polymorphic NOUNs at 2 copies each; RUL-42 (G) adds 5 OP-only
+    comparator MODIFIERs at 2 copies each (per ADR-0002). Pre-Phase-3
+    baseline was 50 (6 SUBJECT × 3 + 2 NOUN × 4 + 12 MODIFIER × 2).
     """
     decks = build_default_deck()
     counts: dict[str, int] = {}
     for c in decks.main:
         counts[c.id] = counts.get(c.id, 0) + 1
     # 6 SUBJECT × 3 + 8 NOUN (2×4 M1.5 + 6×2 M2 RUL-44) + 12 MODIFIER × 2
-    # = 18 + 20 + 24 = 62.
-    assert sum(counts.values()) == 62
+    # + 5 OP-only comparators × 2 (RUL-42)
+    # = 18 + 20 + 24 + 10 = 72.
+    assert sum(counts.values()) == 72
     assert counts["subj.p0"] == 3
     assert counts["noun.chips"] == 4
     assert counts["noun.cards"] == 2
     assert counts["noun.burn"] == 2
     assert counts["mod.cmp.eq.5"] == 2
+    # RUL-42 (G): OP-only comparators present at 2 copies each.
+    for op_id in ("mod.cmp.lt", "mod.cmp.le", "mod.cmp.gt", "mod.cmp.ge", "mod.cmp.eq"):
+        assert counts[op_id] == 2
 
 
 def test_default_main_deck_supports_4_player_initial_deal() -> None:

@@ -31,6 +31,11 @@ from rulso.state import (
 _DEFAULT_ROUNDS: int = 50
 _DEFAULT_SEED: int = 0
 
+# RUL-42 (G): OP-only comparator names per ADR-0002. CLI is the seat with the
+# rng for the dice roll; rules.play_card stamps last_roll using the value we
+# pass in so rules.py stays pure.
+_OP_ONLY_COMPARATOR_NAMES: frozenset[str] = frozenset({"LT", "LE", "GT", "GE", "EQ"})
+
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Entry point. Parses args, runs one game, returns the exit code."""
@@ -42,6 +47,9 @@ def run_game(*, seed: int, max_rounds: int, out: TextIO) -> int:
     """Play one game; emit per-event lines to ``out``. Return 0 on win, 1 on cap-hit."""
     rng = random.Random(seed)
     refill_rng = random.Random(seed ^ 0x5EED)  # disjoint stream from bot decisions
+    # RUL-42 (G): comparator dice rng — disjoint from bot decisions and refills
+    # so reordering bot picks doesn't reshuffle dice rolls.
+    dice_rng = random.Random(seed ^ 0xD1CE)
     state = _start_game(seed)
     _emit(out, "game_start", seed=seed, max_rounds=max_rounds, players=PLAYER_COUNT)
 
@@ -63,7 +71,7 @@ def run_game(*, seed: int, max_rounds: int, out: TextIO) -> int:
             _narrate_round_start(out, state)
         elif state.phase is Phase.BUILD:
             prior_rule = state.active_rule
-            state = _drive_build_turn(state, rng, out)
+            state = _drive_build_turn(state, rng, dice_rng, out)
             if state.phase is Phase.ROUND_START:
                 # Build revolution finished with unfilled slots → rule failed.
                 _narrate_rule_failed(out, prior_rule, state)
@@ -106,12 +114,24 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _drive_build_turn(state: GameState, rng: random.Random, out: TextIO) -> GameState:
+def _drive_build_turn(
+    state: GameState,
+    rng: random.Random,
+    dice_rng: random.Random,
+    out: TextIO,
+) -> GameState:
     """Pull one bot action for the active player and apply it. Returns new state."""
     active_player = state.players[state.active_seat]
     action = choose_action(state, active_player.id, rng)
     if isinstance(action, PlayCard):
         card = _find_hand_card(active_player, action.card_id)
+        # RUL-42 (G): if the played card is an OP-only comparator (ADR-0002),
+        # roll the dice mode the bot picked and pass the drawn N to play_card.
+        dice_mode: int | None = None
+        dice_roll: int | None = None
+        if card.name in _OP_ONLY_COMPARATOR_NAMES and action.dice in (1, 2):
+            dice_mode = action.dice
+            dice_roll = sum(dice_rng.randint(1, 6) for _ in range(dice_mode))
         _emit(
             out,
             "turn",
@@ -122,8 +142,15 @@ def _drive_build_turn(state: GameState, rng: random.Random, out: TextIO) -> Game
             card=action.card_id,
             slot=action.slot,
             dice=action.dice if action.dice is not None else "none",
+            roll=dice_roll if dice_roll is not None else "none",
         )
-        return play_card(state, card, action.slot)
+        return play_card(
+            state,
+            card,
+            action.slot,
+            dice_mode=dice_mode,
+            dice_roll=dice_roll,
+        )
     if isinstance(action, DiscardRedraw):
         # Discard isn't wired into rules.py yet; treat as a pass and flag.
         # Reachable post-RUL-18 when a player's hand has no slot-compatible
