@@ -101,6 +101,21 @@ Action = Annotated[
 ]
 
 
+def enumerate_legal_actions(
+    state: GameState, player: Player
+) -> list[PlayCard | PlayJoker | DiscardRedraw]:
+    """Return every legal non-Pass action for ``player`` in the BUILD phase.
+
+    Bot-side ``choose_action`` already discriminates plays vs discards via
+    ``PLAY_BIAS``; the human-seat driver (``rulso.bots.human``) needs the raw
+    union for menu rendering. Pure structural enumeration: same predicates as
+    the bot, no RNG, no ``Pass`` (caller picks ``Pass`` when the list is empty).
+    """
+    if state.phase is not Phase.BUILD:
+        return []
+    return [*_enumerate_plays(state, player), *_enumerate_discards(player)]
+
+
 def choose_action(state: GameState, player_id: str, rng: random.Random) -> Action:
     """Return a legal action for ``player_id`` with a play-over-discard bias.
 

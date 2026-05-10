@@ -16,6 +16,7 @@ import sys
 from collections.abc import Sequence
 from typing import TextIO
 
+from rulso.bots import human as human_bot
 from rulso.bots.random import DiscardRedraw, Pass, PlayCard, PlayJoker, choose_action
 from rulso.rules import advance_phase, pass_turn, play_card, play_joker
 from rulso.rules import start_game as _start_game
@@ -40,11 +41,30 @@ _OP_ONLY_COMPARATOR_NAMES: frozenset[str] = frozenset({"LT", "LE", "GT", "GE", "
 def main(argv: Sequence[str] | None = None) -> int:
     """Entry point. Parses args, runs one game, returns the exit code."""
     args = _parse_args(argv)
-    return run_game(seed=args.seed, max_rounds=args.rounds, out=sys.stdout)
+    return run_game(
+        seed=args.seed,
+        max_rounds=args.rounds,
+        out=sys.stdout,
+        human_seat=args.human_seat,
+        human_stdin=sys.stdin if args.human_seat is not None else None,
+    )
 
 
-def run_game(*, seed: int, max_rounds: int, out: TextIO) -> int:
-    """Play one game; emit per-event lines to ``out``. Return 0 on win, 1 on cap-hit."""
+def run_game(
+    *,
+    seed: int,
+    max_rounds: int,
+    out: TextIO,
+    human_seat: int | None = None,
+    human_stdin: TextIO | None = None,
+) -> int:
+    """Play one game; emit per-event lines to ``out``. Return 0 on win, 1 on cap-hit.
+
+    When ``human_seat`` is set, the seat at that index is driven by
+    :func:`rulso.bots.human.select_action` reading from ``human_stdin``; the
+    other seats keep using the random-legal bot. ``human_seat=None`` (default)
+    preserves the four-bot baseline byte-for-byte.
+    """
     rng = random.Random(seed)
     refill_rng = random.Random(seed ^ 0x5EED)  # disjoint stream from bot decisions
     # RUL-42 (G): comparator dice rng — disjoint from bot decisions and refills
@@ -71,7 +91,14 @@ def run_game(*, seed: int, max_rounds: int, out: TextIO) -> int:
             _narrate_round_start(out, state)
         elif state.phase is Phase.BUILD:
             prior_rule = state.active_rule
-            state = _drive_build_turn(state, rng, dice_rng, out)
+            state = _drive_build_turn(
+                state,
+                rng,
+                dice_rng,
+                out,
+                human_seat=human_seat,
+                human_stdin=human_stdin,
+            )
             if state.phase is Phase.ROUND_START:
                 # Build revolution finished with unfilled slots → rule failed.
                 _narrate_rule_failed(out, prior_rule, state)
@@ -111,6 +138,17 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         default=_DEFAULT_ROUNDS,
         help=f"Round cap; non-zero exit if reached without a winner (default: {_DEFAULT_ROUNDS})",
     )
+    parser.add_argument(
+        "--human-seat",
+        type=int,
+        default=None,
+        choices=range(PLAYER_COUNT),
+        metavar=f"{{0..{PLAYER_COUNT - 1}}}",
+        help=(
+            "Drive the given seat from the terminal; other seats remain random "
+            "bots. Omit to play a four-bot game (default)."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -119,10 +157,22 @@ def _drive_build_turn(
     rng: random.Random,
     dice_rng: random.Random,
     out: TextIO,
+    *,
+    human_seat: int | None = None,
+    human_stdin: TextIO | None = None,
 ) -> GameState:
-    """Pull one bot action for the active player and apply it. Returns new state."""
+    """Pull one action for the active player and apply it. Returns new state.
+
+    Routes the active seat through the human-seat driver when
+    ``human_seat == state.active_seat`` and ``human_stdin`` is set; otherwise
+    the random-legal bot picks. Action shapes are identical between the two
+    drivers — downstream emit/dispatch is unchanged.
+    """
     active_player = state.players[state.active_seat]
-    action = choose_action(state, active_player.id, rng)
+    if human_seat is not None and state.active_seat == human_seat and human_stdin is not None:
+        action = human_bot.select_action(state, active_player, stdin=human_stdin, stdout=out)
+    else:
+        action = choose_action(state, active_player.id, rng)
     if isinstance(action, PlayCard):
         card = _find_hand_card(active_player, action.card_id)
         # RUL-42 (G): if the played card is an OP-only comparator (ADR-0002),

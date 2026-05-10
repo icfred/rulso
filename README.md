@@ -50,3 +50,11 @@ uv run rulso --seed 0 --rounds 100
 
 Try a few seeds. Some end with a winner (one of the bots reaches `VP_TO_WIN`); some hit the round cap because the dealer's opening hand has no `SUBJECT` card and the rule fails before anyone else gets to play. Both endings are expected M1.5 variance — the bots are deliberately near-random while the substrate is being locked in.
 
+Want to play a hand yourself before the smart bots land? Take one of the four seats and let random bots fill the rest:
+
+```bash
+uv run rulso --seed 0 --human-seat 0
+```
+
+Each of your turns prints your hand, the in-progress rule, your status, and a numbered menu of legal actions. Type the index and press Enter; bad input is rejected without crashing.
+
