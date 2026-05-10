@@ -132,12 +132,18 @@ def resolve_if_rule(
 
     Pipeline:
       1. Render the rule (``grammar.render_if_rule``).
-      2. Scope SUBJECT → frozenset of player ids (label-aware), then fold any
-         SUBJECT-targeted operator MODIFIERs (BUT / AND / OR per ADR-0004).
-      3. Evaluate ``HAS [QUANT] [NOUN]`` for each scoped player, applying the
-         NOUN- and QUANT-targeted operator MODIFIERs.
-      4. Dispatch ``state.revealed_effect`` to every satisfying player via
-         :func:`dispatch_effect`.
+      2. Scope SUBJECT → frozenset of candidate player ids (label-aware,
+         scope-mode aware), then fold any SUBJECT-targeted operator MODIFIERs
+         (BUT / AND / OR per ADR-0004).
+      3. Evaluate ``HAS [QUANT] [NOUN]`` for each candidate player, applying
+         the NOUN- and QUANT-targeted operator MODIFIERs.
+      4. Fire ``state.revealed_effect`` per ``Card.scope_mode`` (ADR-0003):
+         * ``singular`` — fire once with the satisfying subset as targets.
+         * ``existential`` (``ANYONE``) — fire once with the satisfying subset
+           as targets; rule does not fire if the subset is empty.
+         * ``iterative`` (``EACH_PLAYER``) — fire once per satisfying player
+           in seat order from ``state.active_seat``; each fire is a discrete
+           cascade event with that single player as targets.
 
     ``labels`` is an optional pre-computed label-name → frozenset[player_id]
     mapping (the shape returned by ``rulso.labels.recompute_labels``). When
@@ -146,8 +152,9 @@ def resolve_if_rule(
     to avoid double computation. Labels are never stored on ``GameState``
     (per ADR-0001 / ``design/state.md`` "computed, not stored").
 
-    SUBJECTs scoped to an empty label set, HAS-false branches, and a missing
-    ``revealed_effect`` all return the input state unchanged.
+    SUBJECTs scoped to an empty candidate set, HAS-false branches across
+    every candidate, and a missing ``revealed_effect`` all return the input
+    state unchanged.
     """
     structured = render_if_rule(rule)
     # RUL-42 (G): OP-only comparator → bake the rolled N into a transient
@@ -159,6 +166,17 @@ def resolve_if_rule(
     scoped = _fold_subject_modifiers(state, base_scope, structured.subject_modifiers, labels)
     if not scoped:
         return state
+    mode = structured.subject.scope_mode
+    if mode == "iterative":
+        # ADR-0003: one discrete fire per matching player, seat order from
+        # ``state.active_seat``. Each fire is its own cascade event.
+        result = state
+        for player in _seat_ordered_players(state):
+            if player.id in scoped and _evaluate_has(state, player, structured):
+                result = dispatch_effect(result, result.revealed_effect, frozenset({player.id}))
+        return result
+    # ``singular`` and ``existential`` (ADR-0003): single fire with the
+    # satisfying subset as targets. Empty subset → rule does not fire.
     matching = frozenset(
         p.id for p in state.players if p.id in scoped and _evaluate_has(state, p, structured)
     )
@@ -364,22 +382,39 @@ def _scope_subject(
     subject: Card,
     labels: dict[str, frozenset[str]],
 ) -> frozenset[str]:
-    """Resolve a SUBJECT card to the set of player ids in scope.
+    """Resolve a SUBJECT card to the set of candidate player ids.
 
-    ``subject.name`` controls the scope:
-      * One of ``labels.LABEL_NAMES`` → look up that label in ``labels``.
-        Live labels (LEADER, WOUNDED) return the holders for the round; M2-
-        stubbed labels (GENEROUS, CURSED, MARKED, CHAINED) return ``frozenset()``
-        until their derivations land.
-      * Any other value → literal player id; matches the ``Player`` with that
-        id, or ``frozenset()`` if no such player.
-
-    Polymorphic SUBJECTs (e.g. ``ANYONE``, ``EACH PLAYER``) land with the
-    card catalogue in M2.
+    Branches on ``subject.scope_mode`` (RUL-41, ADR-0003):
+      * ``singular`` (default) — literal seat or label lookup. ``subject.name``
+        in :data:`labels.LABEL_NAMES` looks up the round's holders (live for
+        LEADER/WOUNDED/GENEROUS/CURSED; empty for the M2-stubbed MARKED and
+        CHAINED). Any other value is treated as a literal player id; the
+        candidate set is the matching player or ``frozenset()`` if absent.
+      * ``existential`` (``ANYONE``) / ``iterative`` (``EACH_PLAYER``) — every
+        seat is a candidate. ``resolve_if_rule`` then iterates the candidates
+        in seat order from ``state.active_seat`` and applies scope-mode-specific
+        firing semantics.
     """
+    if subject.scope_mode in ("existential", "iterative"):
+        return frozenset(p.id for p in state.players)
     if subject.name in LABEL_NAMES:
         return labels.get(subject.name, frozenset())
     return frozenset(p.id for p in state.players if p.id == subject.name)
+
+
+def _seat_ordered_players(state: GameState) -> tuple[Player, ...]:
+    """Players ordered by seat ascending, starting at ``state.active_seat``.
+
+    ``rules.start_game`` lays ``state.players`` out so position == seat;
+    ``state.active_seat`` is the position index of the active player. For an
+    empty roster this returns an empty tuple. The wrap-around ordering is
+    deterministic, which keeps iterative resolution replay-stable.
+    """
+    n = len(state.players)
+    if n == 0:
+        return ()
+    start = state.active_seat % n
+    return tuple(state.players[(start + i) % n] for i in range(n))
 
 
 def _fold_subject_modifiers(

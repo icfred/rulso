@@ -228,13 +228,17 @@ goal_cards:
 deck:
   # M1.5 baseline composition — held identical so seed 0 produces identical
   # output. M2 cards above are data-only until Phase-3 engine wiring lands.
-  # SUBJECT — 18 physical (6 kinds × 3 copies).
+  # SUBJECT — 24 physical (8 kinds × 3 copies; +2 polymorphic kinds from RUL-41).
   - { id: subj.p0, copies: 3 }
   - { id: subj.p1, copies: 3 }
   - { id: subj.p2, copies: 3 }
   - { id: subj.p3, copies: 3 }
   - { id: subj.leader, copies: 3 }
   - { id: subj.wounded, copies: 3 }
+  # RUL-41: polymorphic SUBJECTs join the live deck — 3 copies each, matching
+  # the M1.5 SUBJECT cadence; ADR-0003 dispatch lives in effects.resolve_if_rule.
+  - { id: subj.anyone, copies: 3 }
+  - { id: subj.each, copies: 3 }
   # NOUN — 8 physical M1.5 baseline (2 kinds × 4 copies) +
   #        12 physical M2 (RUL-44: 6 kinds × 2 copies) = 20 physical.
   # M2 copies sized at 2 to mirror RUL-34's worst-case smoke probe — enough
