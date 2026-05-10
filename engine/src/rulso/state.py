@@ -14,6 +14,7 @@ Collection fields use ``tuple`` so frozen instances are deeply immutable —
 from __future__ import annotations
 
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -42,6 +43,15 @@ class CardType(StrEnum):
     NOUN = "NOUN"
     MODIFIER = "MODIFIER"
     JOKER = "JOKER"
+    # RUL-31: effect cards live in their own deck (`GameState.effect_deck`),
+    # revealed at round_start step 6 per `design/effects-inventory.md`.
+    EFFECT = "EFFECT"
+
+
+# RUL-31 (ADR-0003): SUBJECT scoping mode. Cards default to ``singular``;
+# polymorphic SUBJECTs (`ANYONE`, `EACH_PLAYER`) override. Read by the M2
+# resolver; ignored for non-SUBJECT cards.
+ScopeMode = Literal["singular", "existential", "iterative"]
 
 
 class RuleKind(StrEnum):
@@ -59,6 +69,33 @@ class Card(BaseModel):
     id: str
     type: CardType
     name: str
+    # RUL-31 (ADR-0003): SUBJECT scoping. Default ``singular`` preserves M1.5
+    # behaviour for every existing card; ``existential`` (ANYONE) and
+    # ``iterative`` (EACH_PLAYER) are set on the polymorphic SUBJECTs only.
+    scope_mode: ScopeMode = "singular"
+
+
+class GoalCard(BaseModel):
+    """Goal card — face-up VP-award objective per ``design/goals-inventory.md``.
+
+    Lives in its own deck (``GameState.goal_deck`` / ``goal_discard`` /
+    ``active_goals``); not a :class:`Card` because its payload (predicate id,
+    VP award, claim kind) doesn't fit the uniform ``Card`` shape.
+
+    ``claim_condition`` is a **registry key** (snake_case predicate id), not
+    an expression — the engine resolves it to a function ``(player, state) →
+    bool`` at evaluation time. ``claim_kind`` controls life-cycle: ``"single"``
+    discards on first match and replenishes from ``goal_deck``; ``"renewable"``
+    stays face-up and awards ``vp_award`` to every matching player each round.
+    """
+
+    model_config = _FROZEN
+
+    id: str
+    name: str
+    claim_condition: str
+    vp_award: int
+    claim_kind: Literal["single", "renewable"]
 
 
 class PlayerStatus(BaseModel):
