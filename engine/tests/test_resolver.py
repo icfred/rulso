@@ -41,8 +41,15 @@ def _if_rule(subject: Card, quant: Card, noun: Card) -> RuleBuilder:
     )
 
 
+# RUL-39: tests covering the M1.5 +1 VP semantic now drive the dispatcher
+# through the canonical ``GAIN_VP:1`` effect card. ``revealed_effect`` is
+# baked into the helper so existing assertions (``vp += 1``) keep their
+# meaning post-dispatcher.
+_GAIN_VP_1 = Card(id="eff.vp.gain.1", type=CardType.EFFECT, name="GAIN_VP:1")
+
+
 def _state(*players: Player) -> GameState:
-    return GameState(players=players)
+    return GameState(players=players, revealed_effect=_GAIN_VP_1)
 
 
 def _player(pid: str, chips: int = 50, vp: int = 0) -> Player:
