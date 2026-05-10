@@ -122,8 +122,13 @@ After the pass:
    - HAS-style conditions read current state.
    - ROLLS-style conditions: each scoped player rolls 1d6 publicly; record in `last_roll` (most recent overwrites).
 4. **Apply effect** to every player satisfying the IF clause (every state mutation logged for history).
-5. **JOKER attachment**: if a persistence-Joker was played, move the rule into `persistent_rules` (kind = WHEN or WHILE per Joker variant) instead of discarding fragments.
-6. **Persistent rule trigger check**: any state change above may satisfy an active WHEN. If so, queue and fire (FIFO). Recursion depth capped at 3 to prevent runaway chains.
+5. **Persistent rule trigger check**: any state change above may satisfy an active WHEN. If so, queue and fire (FIFO). Recursion depth capped at 3 to prevent runaway chains.
+6. **JOKER attachment**: if a persistence-Joker (`PERSIST_WHEN` / `PERSIST_WHILE` / `ECHO`) was played, promote the rule into `persistent_rules` and lock its fragments out of the round-end discard. Runs **after** the WHEN trigger check (step 5) by design: a freshly-promoted ECHO/PERSIST rule must not satisfy its own WHEN trigger in the same resolve, which would collapse "re-fires next round" into "fires twice this round". Variants:
+   - `JOKER:PERSIST_WHEN` → kind = `WHEN`.
+   - `JOKER:PERSIST_WHILE` → kind = `WHILE`.
+   - `JOKER:ECHO` → promoted as a one-shot `WHEN`; queues the rule for re-evaluation at next round's resolve and **fires only if its HAS-condition still holds**. Conditional, not unconditional re-fire.
+
+   `JOKER:DOUBLE` leaves no persistent residue — its effect-doubling fires inside step 4 dispatch.
 7. **Goal claim check**: for each active goal, evaluate claim condition:
    - Single-claim goals: first matching player claims +VP, goal discards, draw replacement.
    - Renewable goals: every match this round awards VP; goal stays.
