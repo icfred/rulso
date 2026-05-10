@@ -1,5 +1,11 @@
-# Rulso — M1.5 starter card subset
-# Authored by RUL-17. Source-of-truth design contract: design/cards-inventory.md.
+# Rulso — M2 card vocabulary
+# Authored by RUL-17 (M1.5 starter) + extended by RUL-31 (M2 content).
+# Source-of-truth design contracts:
+#   - design/cards-inventory.md      (rule-fragment vocabulary)
+#   - design/effects-inventory.md    (revealed-effect catalogue)
+#   - design/goals-inventory.md      (goal-card catalogue)
+#   - design/status-tokens.md        (status-application matrix)
+#   - docs/decisions/ADR-0001..0004  (locked design calls)
 #
 # Schema (validated by engine/src/rulso/cards.py via Pydantic):
 #
@@ -14,24 +20,66 @@
 #       # ConditionTemplate, not Card.
 #
 #   subject_cards:    # SUBJECT cards — fill the SUBJECT slot.
-#     - { id: <stable id>, name: <render token> }
+#     - { id: <stable id>, name: <render token>, scope_mode?: <singular|existential|iterative> }
 #       # name conventions (RUL-18 alignment):
 #       #   literal seats:  p0 .. p3          (matches Player.id from rules.start_game)
 #       #   labels:         "THE LEADER", "THE WOUNDED"
 #       #                   (matches keys in labels.LABEL_NAMES per ADR-0001)
+#       #   polymorphic:    ANYONE | EACH_PLAYER
+#       # scope_mode defaults to `singular` (ADR-0003); set `existential` for
+#       # ANYONE, `iterative` for EACH_PLAYER.
 #
 #   noun_cards:       # NOUN cards — fill the NOUN slot.
-#     - { id: <stable id>, name: <render token: CHIPS | VP> }
+#     - { id: <stable id>, name: <render token: CHIPS | VP | CARDS | RULES | HITS | GIFTS | ROUNDS | BURN_TOKENS> }
 #
 #   modifier_cards:   # MODIFIER comparator cards — fill the QUANT slot.
-#     - { id: <stable id>, name: "<OP>:<N>" }   # OP in {GE,GT,LE,LT,EQ}; N int
+#     - { id: <stable id>, name: "<OP>" | "<OP>:<N>" }
+#       # OP in {GE,GT,LE,LT,EQ}; baked-N grandfathered from M1.5; M2 OP-only
+#       # cards (per ADR-0002) draw N at play time from dice.
 #
-#   deck:             # Physical-deck composition. Multiplies cards into the main deck.
-#     - { id: <subject_/noun_/modifier_ id>, copies: <int > 0> }
-#       # CONDITION cards must NOT appear here — they live in a separate condition deck.
+#   operator_modifier_cards:  # MODIFIER operator cards — attach to filled slots (ADR-0004).
+#     - { id: <stable id>, name: <op token>, targets: [<SUBJECT|NOUN|QUANT>...] }
 #
-# All card ids must be unique across condition_cards/subject_cards/noun_cards/modifier_cards.
-# Every `deck` entry id must reference a non-CONDITION card.
+#   joker_cards:      # JOKER cards — attach to the rule as a whole.
+#     - { id: <stable id>, name: "JOKER:<VARIANT>" }
+#
+#   effect_cards:     # EFFECT cards — live in `GameState.effect_deck`; revealed each round.
+#     - { id: <stable id>, name: <render token per design/effects-inventory.md> }
+#
+#   goal_cards:       # Goal cards — live in `GameState.goal_deck`; loaded as GoalCard, not Card.
+#     - id: <stable id>
+#       name: <render token, e.g. THE_BANKER>
+#       claim_condition: <snake_case predicate id; registered in goal_predicates.py>
+#       vp_award: <int>
+#       claim_kind: single | renewable
+#
+#   deck:             # Physical main-deck composition. Multiplies cards into the main deck.
+#     - { id: <subject_/noun_/modifier_/operator_modifier_/joker_ id>, copies: <int > 0> }
+#       # CONDITION / EFFECT / goal cards must NOT appear here — they live in
+#       # separate decks. Effect cards seed `effect_deck` via `load_effect_cards`;
+#       # goal cards seed `goal_deck` via `load_goal_cards`.
+#
+# All card ids must be unique across condition_cards / subject_cards /
+# noun_cards / modifier_cards / operator_modifier_cards / joker_cards /
+# effect_cards / goal_cards.
+# Every `deck` entry id must reference a card from the main-deck-eligible
+# sections (subject / noun / modifier / operator_modifier / joker).
+#
+# RUL-31 NB on `deck:` scope. Phase-2 substrate ships the full M2 vocabulary
+# as DATA — every card category above is loadable, validated, and ready for
+# the Phase-3 engine fan to consume. The `deck:` composition itself is held
+# identical to the M1.5 baseline because:
+#   * "no behaviour change for M1.5 paths" + "seed 0 produces identical output"
+#     (RUL-31 DoD hard constraints). Any deck change reshuffles seed 0.
+#   * Most M2 cards would crash the M1.5 engine if drawn: new NOUNs raise in
+#     `_evaluate_has`; OP-only comparators raise in `_parse_quant`; operator
+#     MODIFIERs land in QUANT and raise the same way. Even silently-safe
+#     additions (ANYONE / EACH_PLAYER no-op via empty scope; JOKERs stay
+#     in-hand) regress the M1.5 watchable smoke statistically by diluting
+#     the rule-fire pool.
+# Phase-3 engine tickets (effect dispatcher, ANYONE/EACH scoping, comparator
+# dice, operator MODIFIER fold, polymorphic NOUN reads) extend `deck:` for
+# their respective additions once each consumer path is wired.
 
 condition_cards:
   - id: cond.if
@@ -41,21 +89,48 @@ condition_cards:
       - { name: SUBJECT, type: SUBJECT }
       - { name: QUANT, type: MODIFIER }
       - { name: NOUN, type: NOUN }
+  - id: cond.when
+    name: WHEN
+    kind: WHEN
+    slots:
+      - { name: SUBJECT, type: SUBJECT }
+      - { name: QUANT, type: MODIFIER }
+      - { name: NOUN, type: NOUN }
+  - id: cond.while
+    name: WHILE
+    kind: WHILE
+    slots:
+      - { name: SUBJECT, type: SUBJECT }
+      - { name: QUANT, type: MODIFIER }
+      - { name: NOUN, type: NOUN }
 
 subject_cards:
+  # Literal seats — match Player.id from rules.start_game.
   - { id: subj.p0, name: p0 }
   - { id: subj.p1, name: p1 }
   - { id: subj.p2, name: p2 }
   - { id: subj.p3, name: p3 }
+  # Labels — match labels.LABEL_NAMES keys per ADR-0001.
   - { id: subj.leader, name: "THE LEADER" }
   - { id: subj.wounded, name: "THE WOUNDED" }
+  # Polymorphic SUBJECTs — ADR-0003 scope_mode dispatch.
+  - { id: subj.anyone, name: ANYONE, scope_mode: existential }
+  - { id: subj.each, name: EACH_PLAYER, scope_mode: iterative }
 
 noun_cards:
   - { id: noun.chips, name: CHIPS }
   - { id: noun.vp, name: VP }
+  # M2 NOUNs — per design/cards-inventory.md "NOUN → M2 nouns".
+  - { id: noun.cards, name: CARDS }
+  - { id: noun.rules, name: RULES }
+  - { id: noun.hits, name: HITS }
+  - { id: noun.gifts, name: GIFTS }
+  - { id: noun.rounds, name: ROUNDS }
+  - { id: noun.burn, name: BURN_TOKENS }
 
 modifier_cards:
-  # Coverage: 5 OPs (GE, GT, LE, LT, EQ) × thresholds spanning 3, 5, 10, 20.
+  # M1.5 baked-N comparators (grandfathered per ADR-0002):
+  # 5 OPs (GE, GT, LE, LT, EQ) × thresholds spanning 3, 5, 10, 20.
   # The five inventory-mandated kinds (LT:5, LT:20, GT:10, GE:3, EQ:5) are
   # included; the rest fill out the OP × N matrix so 4-bot games have a thick
   # enough comparator pool that hands draw a usable mix.
@@ -71,19 +146,99 @@ modifier_cards:
   - { id: mod.cmp.ge.5, name: "GE:5" }
   - { id: mod.cmp.ge.10, name: "GE:10" }
   - { id: mod.cmp.eq.5, name: "EQ:5" }
+  # M2 OP-only comparators (per ADR-0002): N drawn at play time from 1d6/2d6.
+  - { id: mod.cmp.lt, name: "LT" }
+  - { id: mod.cmp.le, name: "LE" }
+  - { id: mod.cmp.gt, name: "GT" }
+  - { id: mod.cmp.ge, name: "GE" }
+  - { id: mod.cmp.eq, name: "EQ" }
+
+operator_modifier_cards:
+  # M2 operator MODIFIERs — attach to filled slots per ADR-0004.
+  # `targets` is the set of slot kinds the operator may attach to.
+  - { id: mod.op.but, name: BUT, targets: [SUBJECT] }
+  - { id: mod.op.and, name: AND, targets: [SUBJECT, NOUN] }
+  - { id: mod.op.or, name: OR, targets: [SUBJECT, NOUN] }
+  - { id: mod.op.more_than, name: MORE_THAN, targets: [QUANT] }
+  - { id: mod.op.at_least, name: AT_LEAST, targets: [QUANT] }
+
+joker_cards:
+  # M2 JOKERs — rule-level attachment per design/cards-inventory.md "JOKER".
+  - { id: jkr.persist_when, name: "JOKER:PERSIST_WHEN" }
+  - { id: jkr.persist_while, name: "JOKER:PERSIST_WHILE" }
+  - { id: jkr.double, name: "JOKER:DOUBLE" }
+  - { id: jkr.echo, name: "JOKER:ECHO" }
+
+effect_cards:
+  # M2 starter (12 cards) per design/effects-inventory.md "M2 starter subset".
+  # Render names follow `<KIND_TOKEN>[:<MAG>][@<TARGET_MOD>]` — dispatcher in
+  # Phase-3 effects.py parses on apply.
+  - { id: eff.chips.gain.5, name: "GAIN_CHIPS:5" }
+  - { id: eff.chips.gain.10, name: "GAIN_CHIPS:10" }
+  - { id: eff.chips.drain.5, name: "LOSE_CHIPS:5" }
+  - { id: eff.vp.gain.1, name: "GAIN_VP:1" }
+  - { id: eff.vp.drain.1, name: "LOSE_VP:1" }
+  - { id: eff.burn.apply.1, name: "APPLY_BURN:1" }
+  - { id: eff.mute.apply, name: APPLY_MUTE }
+  - { id: eff.blessed.apply, name: "APPLY_BLESSED@EXCEPT_MATCHED" }
+  - { id: eff.chained.apply, name: APPLY_CHAINED }
+  - { id: eff.burn.clear.1, name: "CLEAR_BURN:1" }
+  - { id: eff.draw.2, name: "DRAW:2" }
+  - { id: eff.noop, name: NOOP }
+
+goal_cards:
+  # M2 starter (7 goals) per design/goals-inventory.md "M2 starter subset".
+  # `claim_condition` is a registry key resolved by the Phase-3 goals engine.
+  - id: goal.banker
+    name: THE_BANKER
+    claim_condition: chips_at_least_75
+    vp_award: 1
+    claim_kind: single
+  - id: goal.debtor
+    name: THE_DEBTOR
+    claim_condition: chips_under_10
+    vp_award: 1
+    claim_kind: single
+  - id: goal.builder
+    name: THE_BUILDER
+    claim_condition: rules_completed_at_least_3
+    vp_award: 1
+    claim_kind: single
+  - id: goal.philanthropist
+    name: THE_PHILANTHROPIST
+    claim_condition: gifts_at_least_2
+    vp_award: 1
+    claim_kind: single
+  - id: goal.survivor
+    name: THE_SURVIVOR
+    claim_condition: burn_at_least_2
+    vp_award: 1
+    claim_kind: single
+  - id: goal.free_agent
+    name: THE_FREE_AGENT
+    claim_condition: free_agent
+    vp_award: 1
+    claim_kind: single
+  - id: goal.hoarder
+    name: THE_HOARDER
+    claim_condition: full_hand
+    vp_award: 1
+    claim_kind: renewable
 
 deck:
-  # SUBJECT — 18 physical (6 kinds × 3 copies)
+  # M1.5 baseline composition — held identical so seed 0 produces identical
+  # output. M2 cards above are data-only until Phase-3 engine wiring lands.
+  # SUBJECT — 18 physical (6 kinds × 3 copies).
   - { id: subj.p0, copies: 3 }
   - { id: subj.p1, copies: 3 }
   - { id: subj.p2, copies: 3 }
   - { id: subj.p3, copies: 3 }
   - { id: subj.leader, copies: 3 }
   - { id: subj.wounded, copies: 3 }
-  # NOUN — 8 physical (2 kinds × 4 copies)
+  # NOUN — 8 physical (2 kinds × 4 copies).
   - { id: noun.chips, copies: 4 }
   - { id: noun.vp, copies: 4 }
-  # MODIFIER — 24 physical (12 kinds × 2 copies)
+  # MODIFIER — 24 physical (12 kinds × 2 copies, baked-N comparators).
   - { id: mod.cmp.lt.3, copies: 2 }
   - { id: mod.cmp.lt.5, copies: 2 }
   - { id: mod.cmp.lt.10, copies: 2 }
