@@ -23,6 +23,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from rulso.effects import is_operator_modifier
+from rulso.legality import can_attach_joker
 from rulso.state import (
     DISCARD_COST,
     CardType,
@@ -81,8 +82,21 @@ class Pass(BaseModel):
     kind: Literal["pass"] = "pass"
 
 
+class PlayJoker(BaseModel):
+    """Attach a JOKER from hand to the active rule (RUL-45).
+
+    JOKERs do not fill a slot; they bind to ``RuleBuilder.joker_attached``
+    via ``rules.play_joker``. One joker per rule per ``design/state.md``.
+    """
+
+    model_config = _FROZEN
+
+    kind: Literal["play_joker"] = "play_joker"
+    card_id: str
+
+
 Action = Annotated[
-    PlayCard | DiscardRedraw | Pass,
+    PlayCard | DiscardRedraw | Pass | PlayJoker,
     Field(discriminator="kind"),
 ]
 
@@ -90,11 +104,12 @@ Action = Annotated[
 def choose_action(state: GameState, player_id: str, rng: random.Random) -> Action:
     """Return a legal action for ``player_id`` with a play-over-discard bias.
 
-    When both ``play_card`` and ``discard_redraw`` are legal, ``play_card`` is
-    chosen with probability :data:`PLAY_BIAS`, otherwise the bot picks
-    uniformly within whichever pool is non-empty. Falls back to :class:`Pass`
-    when neither is legal. Deterministic given ``rng``: same RNG state in,
-    same action out. Pure function — no global state, no mutation of inputs.
+    When both play actions (``play_card`` / ``play_joker``) and
+    ``discard_redraw`` are legal, a play action is chosen with probability
+    :data:`PLAY_BIAS`, otherwise the bot picks uniformly within whichever pool
+    is non-empty. Falls back to :class:`Pass` when neither is legal.
+    Deterministic given ``rng``: same RNG state in, same action out. Pure
+    function — no global state, no mutation of inputs.
     """
     player = _find_player(state, player_id)
     if state.phase is not Phase.BUILD:
@@ -119,11 +134,11 @@ def _find_player(state: GameState, player_id: str) -> Player:
     raise ValueError(f"unknown player {player_id!r}")
 
 
-def _enumerate_plays(state: GameState, player: Player) -> list[PlayCard]:
+def _enumerate_plays(state: GameState, player: Player) -> list[PlayCard | PlayJoker]:
     if state.active_rule is None:
         return []
     muted = player.status.mute
-    plays: list[PlayCard] = []
+    plays: list[PlayCard | PlayJoker] = []
     for slot in state.active_rule.slots:
         if slot.filled_by is not None:
             continue
@@ -154,6 +169,21 @@ def _enumerate_plays(state: GameState, player: Player) -> list[PlayCard]:
                 plays.append(PlayCard(card_id=card.id, slot=slot.name, dice=2))
             else:
                 plays.append(PlayCard(card_id=card.id, slot=slot.name, dice=None))
+    # RUL-45 (J): JOKER attachment as a 4th BUILD-phase play type. Additive —
+    # JOKERs don't fill a slot (no JOKER slot exists in CONDITION templates),
+    # so they sit outside the slot loop. Enumerated when an active rule is
+    # joker-free and the player holds a JOKER in hand. MUTE does NOT block
+    # JOKER plays per design/state.md "Status Tokens" (MUTE blocks only
+    # MODIFIER cards).
+    rule = state.active_rule
+    if rule.joker_attached is None:
+        seen_joker_ids: set[str] = set()
+        for card in player.hand:
+            if card.id in seen_joker_ids:
+                continue
+            if can_attach_joker(rule, card):
+                plays.append(PlayJoker(card_id=card.id))
+                seen_joker_ids.add(card.id)
     return plays
 
 

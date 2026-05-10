@@ -237,7 +237,8 @@ def test_default_main_deck_multiplies_copies() -> None:
     comparator MODIFIERs at 2 copies each (ADR-0002); RUL-43 (H) adds 5
     operator MODIFIERs at 2 copies each (ADR-0004); RUL-41 (F) adds the two
     polymorphic SUBJECTs (`subj.anyone`, `subj.each`) at the standing 3-copy
-    SUBJECT cadence (ADR-0003). Pre-Phase-3 baseline was 50 (6 SUBJECT × 3 +
+    SUBJECT cadence (ADR-0003); RUL-45 (J) adds 4 JOKER variants at 2 copies
+    each. Pre-Phase-3 baseline was 50 (6 SUBJECT × 3 +
     2 NOUN × 4 + 12 MODIFIER × 2).
     """
     decks = build_default_deck()
@@ -246,8 +247,9 @@ def test_default_main_deck_multiplies_copies() -> None:
         counts[c.id] = counts.get(c.id, 0) + 1
     # 8 SUBJECT × 3 (6 M1.5 + 2 RUL-41 polymorphic) + 8 NOUN (2×4 M1.5 + 6×2
     # M2 RUL-44) + 12 MODIFIER × 2 + 5 OP-only comparators × 2 (RUL-42) +
-    # 5 operator MODIFIERs × 2 (RUL-43) = 24 + 20 + 24 + 10 + 10 = 88.
-    assert sum(counts.values()) == 88
+    # 5 operator MODIFIERs × 2 (RUL-43) + 4 JOKERs × 2 (RUL-45)
+    # = 24 + 20 + 24 + 10 + 10 + 8 = 96.
+    assert sum(counts.values()) == 96
     assert counts["subj.p0"] == 3
     assert counts["subj.anyone"] == 3
     assert counts["subj.each"] == 3
@@ -261,6 +263,9 @@ def test_default_main_deck_multiplies_copies() -> None:
     # RUL-43 (H): every operator MODIFIER seeded at 2 copies.
     for op_id in ("mod.op.but", "mod.op.and", "mod.op.or", "mod.op.more_than", "mod.op.at_least"):
         assert counts[op_id] == 2, f"operator {op_id} not at expected copies"
+    # RUL-45 (J): every JOKER variant seeded at 2 copies.
+    for jkr_id in ("jkr.persist_when", "jkr.persist_while", "jkr.double", "jkr.echo"):
+        assert counts[jkr_id] == 2, f"joker {jkr_id} not at expected copies"
 
 
 def test_default_main_deck_supports_4_player_initial_deal() -> None:
