@@ -257,3 +257,38 @@ Separately, the `_drive_to_first_build` fragility was pre-existing (the helper r
 Substrate-watchpoint section in `PROJECT_CONTEXT.md` could grow a behavioural-substrate clause: "When a PR changes the contract of a public function (signature, required-field consumption, exception class), every test that constructs a `GameState` (or equivalent fixture) for the affected code path is implicitly impacted. List the contract change in the PR description and propose a helper-pin pattern for downstream test fixtures." The orchestrator dispatching parallel siblings should bake the helper-pin into all dependent tickets' hand-overs.
 
 Worth promoting to global `CLAUDE.md`: "Behavioural substrate" alongside "code substrate" — both deserve watchpoints. CLEAN merge mechanics is necessary but not sufficient when a parallel fan shares behavioural substrate.
+
+---
+
+---
+date: 2026-05-10
+ticket-context: RUL-47, RUL-54, RUL-35
+template-worthy: yes
+---
+
+## What happened
+
+RUL-47 added an `rng=None` parameter to `enter_round_start` for the new effect-deck-recycle path. The fallback was `rng if rng is not None else random.Random()` — a fresh, unseeded `random.Random()` whenever the caller didn't pass one. RUL-47's PR review (mine) caught all the test fixtures that fire on round 1 (the existing fixtures all built minimal multi-round games); none of them exercised the recycle, because the recycle path only triggers once the 12-card effect deck exhausts — at round ~13. CI green. Squash-merged.
+
+The CLI (`cli.py:85`) was never updated to thread an rng through its `advance_phase(state)` call for `ROUND_START`. So in production: `cli.run_game(seed=0)` ran deterministically for ~13 rounds, then `_draw_effect_card` hit `if not deck: ... rng.shuffle(deck)` with `rng=random.Random()` (the unseeded fallback), and the rest of the game went non-deterministic. Same `--seed 0` produced different winner outcomes per invocation. Two latent twin foot-guns (same `rng or random.Random()` shape) lived at `enter_resolve` step 12 and `_refill_hands` — currently masked because the CLI passes `refill_rng` to both, but waiting for the next caller to forget.
+
+RUL-35 (the M2 watchable smoke) was the first thing that exercised the >13-round path with 10 seeds × 5 back-to-back sweeps. Its worker probed, observed 4–6/10 winner variance across identical invocations, traced it back to the unseeded fallback, and correctly stop-condition'd rather than build the smoke on top of a non-deterministic substrate. RUL-54 filed and dispatched as a substrate-fix blocker; landed via PR #50 (shape (b) — `rng=None` tolerated only when the reshuffle does not fire; raises `ValueError` at the reshuffle site otherwise; new `effect_rng = random.Random(seed ^ 0xEFFC)` disjoint stream in the CLI). 429/429 tests, 4 new (incl. `test_determinism.py` byte-identical-stdout invariant past the recycle threshold).
+
+## Root cause
+
+Behavioural-substrate cascade at *depth*, not at width. The 2026-05-10 prior lesson (revealed_effect pin cascade) covered width — a contract change ripples across parallel siblings within a single fan. This is the same shape but on the time-of-trigger axis: a fallback that's silent until N rounds into a game (or N retries into a job, or N MB into a file, etc.) escapes any PR review that doesn't deliberately exercise the deep path. The PR-merge spot-check rule reads the diff and asks "does the DoD bullet appear here". It does not ask "what's the depth/time horizon at which this contract change first bites?" That's a different question and it was the right question to ask of RUL-47.
+
+A second factor: `rng or random.Random()` is a tempting Python idiom for "make this work without a seed when nobody passes one". It's specifically dangerous when the function will be called from a context that *expects* determinism (cli.py threading a seed through) but the rng parameter is only consumed conditionally (here, conditional on the recycle path triggering). The idiom mixes "deterministic when caller cares" with "non-deterministic when caller doesn't" — and the only way to know which mode you're in is to know whether the conditional path fires, which depends on runtime state.
+
+## Fix in project
+
+- RUL-54 PR #50: shape (b) lands. `rng=None` tolerated when the reshuffle does not fire; `ValueError("seeded rng required to recycle effect_discard into effect_deck")` at the site when it does. CLI gains `effect_rng = random.Random(seed ^ 0xEFFC)` and threads it through `advance_phase` for ROUND_START. Twin sites at `enter_resolve` step 12 and `_refill_hands` get the same `raise ValueError` shape so they can't silently regress later. `test_determinism.py` exercises round ≥ 13 on 3 seeds and asserts byte-identical stdout across back-to-back invocations.
+- RUL-35 re-dispatched against post-RUL-54 main; worker's pre-fix probe noted 4–6/10 winner variance, so the deterministic baseline likely sits at the 5/10 boundary. Phase 3.5 polish pre-allocated; only filed if RUL-35 lands at <5/10.
+
+## Proposed template change
+
+`workflows/pr-merge.md` step 1.5 should grow a second sub-bullet: "If the PR adds a new code path that fires conditionally on runtime state (deck exhaustion, retry counter, accumulated history, etc.), state explicitly in the PR description: 'this path first fires at <depth/time>'. Spot-check by reading the diff for the conditional and asking whether any existing test reaches it. If no test does and the path is reachable in production, file the missing test as a sibling of the original ticket — the path exists in some sense the moment it's mergeable, not the moment the first user hits it."
+
+`workflows/feature-work.md` (or a worker-contract doc): when adding a parameter with a `param or <default>` fallback shape to a public function, the hand-back must answer two questions explicitly: (1) "what happens when the fallback is consumed?" and (2) "is the fallback ever consumed in production?" If (1) is non-deterministic and (2) is yes, the fallback is a trap — raise instead, or make the parameter required, or pin a deterministic default.
+
+Worth promoting to global `CLAUDE.md`: "Conditional substrate" — a code path that fires only on rare runtime state — is the third axis of substrate watching, alongside "code substrate" (file-level shape) and "behavioural substrate" (function-level contract). Code-substrate is caught by additive-only review; behavioural-substrate by rebase-and-test-against-post-merge; conditional-substrate by *depth-aware* review (does any test reach this branch?). The three lesson families compose: a PR can change a public-function contract (behavioural) on a conditional path (conditional) that no existing test reaches (depth) — that's exactly the shape RUL-47 had.

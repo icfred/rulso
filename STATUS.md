@@ -1,4 +1,4 @@
-_Last updated: 2026-05-10 by orchestrator session — Wave 2 SHIPPED (RUL-49 BLESSED chip-loss + RUL-52 CLI human-seat); RUL-35 (M2 watchable smoke) is the Wave 3 gate, ready to dispatch; RUL-51 SHOP queued for Wave 4_
+_Last updated: 2026-05-10 by orchestrator session — RUL-54 SHIPPED (rng determinism substrate fix unblocking RUL-35); RUL-35 ready to re-dispatch against post-RUL-54 main; lesson captured to workflow_lessons.md; RUL-51 SHOP + RUL-53 docs queued for Wave 4_
 
 # Rulso — orchestrator bootstrap
 
@@ -17,13 +17,22 @@ Linear board: https://linear.app/rulso (team `RUL`, projects: Engine / Infra / B
 
 ## In flight
 
-**Nothing in flight.** Wave 2 fully merged. Main: **425 tests passing**, ruff clean. BLESSED now cancels chip-loss at every site (LOSE_CHIPS effect + BURN tick); `--human-seat` flag on the CLI lets the user play one of the four seats with random bots filling the rest.
+**Nothing in flight.** RUL-54 (rng determinism substrate fix) merged. Main: **429 tests passing** (425 + 4 new from RUL-54), ruff clean. Seeded games now reproduce byte-identical stdout across back-to-back invocations past the effect-deck recycle threshold (round ~13). RUL-35 (M2 watchable smoke) is ready for re-dispatch.
+
+### RUL-35 detour — what just happened
+
+RUL-35's first dispatch correctly stop-condition'd before any code change. Worker probed 5 × 10-seed sweeps and saw winner counts varying 4–6/10 across identical invocations. Root cause: `cli.py:85` called `advance_phase(state)` without rng for `ROUND_START`, and RUL-47's `enter_round_start` fell back to an unseeded `random.Random()` whenever the 12-card effect deck recycled (round ~13). Two latent twins at `enter_resolve` step 12 and `_refill_hands` used the same `rng or random.Random()` fallback shape.
+
+RUL-54 fixed all three sites: shape (b) — `rng=None` tolerated when the reshuffle does not fire; `ValueError` at the reshuffle site otherwise. New disjoint stream `effect_rng = random.Random(seed ^ 0xEFFC)` slots into the CLI alongside `rng` / `refill_rng` (0x5EED) / `dice_rng` (0xD1CE). 4 new tests including `test_determinism.py` byte-identical-stdout invariant.
+
+**Lesson captured** (`docs/workflow_lessons.md` 2026-05-10): a behavioural-substrate cascade at *depth* — RUL-47's fallback only bit at round 13, escaping a PR review that read the diff and confirmed all existing fixtures stayed green. Three substrate axes proposed for the global protocol: code-substrate (file shape), behavioural-substrate (function contract), conditional-substrate (runtime-conditional path). RUL-47 hit all three.
 
 ### Wave plan
 
 - **Wave 1 (DONE 2026-05-10)**: RUL-47 (round-flow effect-deck draw — substrate wiring; PR #44) + RUL-48 (cards-inventory.md noun.hits text fix; PR #42) + RUL-50 (sync design/state.md JOKER step-reorder + ECHO conditional; PR #43). RUL-23 sweep: PR #45.
 - **Wave 2 (DONE 2026-05-10)**: RUL-49 (BLESSED chip-loss + BURN tick; PR #46) + RUL-52 (CLI human-seat; PR #47). Behavioural-substrate cascade contained in PR #46 (single fixture amended in-PR with explanatory comment; 8 new tests cover the BLESSED+chip-loss matrix). UI/driver work in PR #47 was strictly additive (kw-only `human_seat=None` defaults; existing CLI smoke tests passed unchanged). RUL-23 sweep: this PR.
-- **Wave 3 (gate, solo) — READY**: RUL-35 — M2 watchable smoke. Lands on fully-wired M2 (post-Wave-2). Reclaims the winner-emergence assertion that RUL-34 deferred during Phase 3.
+- **RUL-54 (substrate fix, DONE 2026-05-10)**: PR #50. Thread `effect_rng` through CLI → `enter_round_start`; eliminate `rng or random.Random()` fallbacks at three sites (now raise `ValueError` at the reshuffle path). Disjoint stream `seed ^ 0xEFFC`. New `test_determinism.py` exercises post-round-13 invariants. Unblocked RUL-35.
+- **Wave 3 (gate, solo) — READY for re-dispatch**: RUL-35 — M2 watchable smoke. Lands on fully-wired + deterministic M2 (post-RUL-54). Reclaims the winner-emergence assertion that RUL-34 deferred during Phase 3. Worker's pre-fix probe noted 4–6/10 winner variance; the deterministic baseline likely sits at the 5/10 boundary. Phase 3.5 polish pre-allocated; only filed if the final baseline lands at <5/10.
 - **Wave 4 (post-gate)**: RUL-51 — SHOP round (every 3 rounds, lowest-VP buys first). Held until Wave 3 baseline pins; SHOP shifts round cadence.
 - **Wave 4 docs chore**: RUL-53 — refresh `docs/engine/bots.md` for RUL-43/45/52 (PlayJoker, operator-MODIFIER skip rules, `enumerate_legal_actions`, `bots/human.py`). Parallel-safe with anything; pick up alongside RUL-51 or whenever a worker has spare cycles.
 - **Open after Wave 3**: M3 ISMCTS scoping. Lean is still to defer M3 until the user has playtested via RUL-52 (now landed) — the playtest data shapes ISMCTS payoff.
@@ -43,9 +52,10 @@ Linear board: https://linear.app/rulso (team `RUL`, projects: Engine / Infra / B
 - RUL-52 worker: `docs/engine/bots.md` is stale (predates RUL-43/45 — no `PlayJoker`, no operator-MODIFIER skip rules). Filed **RUL-53** as a Wave 4 docs chore.
 
 **Outstanding follow-ups**:
-- RUL-35: M2 watchable smoke — **Wave 3 gate, ready**.
+- RUL-35: M2 watchable smoke — **Wave 3 gate, ready for re-dispatch against post-RUL-54 main**.
 - RUL-51: SHOP round — **Wave 4**, blocked by RUL-35.
 - RUL-53: refresh `docs/engine/bots.md` for Phase 3 + Wave 2 — **Wave 4 docs chore**.
+- RUL-54: rng determinism substrate fix — **DONE 2026-05-10 (PR #50)**.
 
 ### Phase 3 fan — final state (2026-05-10)
 
@@ -71,8 +81,9 @@ Linear board: https://linear.app/rulso (team `RUL`, projects: Engine / Infra / B
 **Lessons captured** (`docs/workflow_lessons.md`):
 - 2026-05-10: revealed_effect pin fan-out — every Phase 3 PR needed pin; CLEAN merge mechanics didn't catch
 - 2026-05-10: deck-size fragility in test helpers — seed-0 lucky deals invisibly bake into 14+ tests
+- 2026-05-10: behavioural-substrate cascade at depth (RUL-47/RUL-54) — `rng=None` fallback didn't bite until round 13, escaping diff-level PR review. Proposes a third "conditional-substrate" axis alongside code-substrate and behavioural-substrate.
 
-M2 Phase 2 SHIPPED (RUL-31 cards/state.py substrate, RUL-32 WHEN+WHILE lifecycle, RUL-33 GENEROUS+CURSED labels). M1.5 smoke re-contract SHIPPED (RUL-34). M2 Phase 3 fan + Wave 1 + Wave 2 SHIPPED (13 PRs in this stretch, all green).
+M2 Phase 2 SHIPPED (RUL-31 cards/state.py substrate, RUL-32 WHEN+WHILE lifecycle, RUL-33 GENEROUS+CURSED labels). M1.5 smoke re-contract SHIPPED (RUL-34). M2 Phase 3 fan + Wave 1 + Wave 2 + RUL-54 substrate fix SHIPPED (14 PRs in this stretch, all green).
 
 ## Open judgment calls
 
@@ -111,6 +122,7 @@ M1 + M1.5 + M2 Phase 1 + M2 Phase 2 + M2 Phase 3 fan + Wave 1 + Wave 2 = ~33 tic
 - Card naming convention (M1.5-ratified, M2-extended): SUBJECT names use `Player.id` literals (`p0..p3`) and `labels.LABEL_NAMES` keys (`"THE LEADER"`); effect-card IDs follow `eff.<status>.<verb>.[N]`.
 - **Substrate-and-data tickets** must split DoD into (a) data loadable + (b) data observable in runtime.
 - **Behavioural-substrate cascade rule** (2026-05-10): when a PR changes a public-function contract (signature, required-field consumption, exception class), every test that constructs `GameState` for the affected code path is implicitly impacted. Rebase against post-merge main and run affected tests before squash-merge if the PR is part of a parallel fan with a sibling that landed a contract change. CLEAN merge mechanics is necessary but not sufficient.
+- **Conditional-substrate rule** (2026-05-10, RUL-54): when a PR adds a code path that fires conditionally on accumulated runtime state (deck exhaustion, retry counter, history growth), spot-check by asking "what's the depth at which this branch first triggers, and does any test reach it?" If no test reaches the branch and it's reachable in production, the path is unreviewed substrate. RUL-47's `rng=None` fallback at the recycle site didn't bite until round 13; RUL-54 lifted it to a `ValueError` so future callers can't silently regress. Disjoint-stream pattern: `rng = seed`, `refill_rng = seed ^ 0x5EED`, `dice_rng = seed ^ 0xD1CE`, `effect_rng = seed ^ 0xEFFC` (RUL-54).
 - **Public legal-action surface (Wave 2)**: `bots.random.enumerate_legal_actions(state, player)` is the canonical raw legal-action enumeration — no `PLAY_BIAS` weighting; consumed by `bots.human` and any future driver. `bots.random.choose_action` remains the bot's PLAY_BIAS-weighted picker.
 
 ## Conventions (also in CLAUDE.md, restated for reflex)

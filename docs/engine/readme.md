@@ -1,4 +1,4 @@
-_Last edited: 2026-05-10 by RUL-23 (sweep batching Wave 2: RUL-49 BLESSED chip-loss, RUL-52 CLI human-seat)_
+_Last edited: 2026-05-10 by RUL-23 (sweep batching RUL-54: rng determinism + workflow_lessons capture)_
 
 # engine
 
@@ -48,6 +48,7 @@ Python 3.12 package. `uv` managed. Pydantic v2 state, asyncio + `websockets` ser
 | `engine/tests/test_goals.py` | live | goal-claim engine (RUL-46 K): predicate registry, single-claim discard + replenish, renewable persist |
 | `engine/tests/test_jokers.py` | live | JOKER attachment (RUL-45 J): PERSIST_WHEN/WHILE promote, ECHO conditional one-shot WHEN, DOUBLE effect doubling |
 | `engine/tests/test_cli_human_seat.py` | live | CLI human-seat driver (RUL-52): valid-pick happy path, invalid/out-of-range loop, EOF→Pass fallback, all 4 seats parametrised, out-of-range CLI flag rejection |
+| `engine/tests/test_determinism.py` | live | end-to-end determinism past effect-deck recycle (RUL-54): byte-identical stdout on 3 seeds across back-to-back `cli.run_game` invocations + guard that the recycle threshold is actually crossed |
 
 ## Commands
 
