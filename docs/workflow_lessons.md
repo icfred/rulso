@@ -292,3 +292,40 @@ A second factor: `rng or random.Random()` is a tempting Python idiom for "make t
 `workflows/feature-work.md` (or a worker-contract doc): when adding a parameter with a `param or <default>` fallback shape to a public function, the hand-back must answer two questions explicitly: (1) "what happens when the fallback is consumed?" and (2) "is the fallback ever consumed in production?" If (1) is non-deterministic and (2) is yes, the fallback is a trap — raise instead, or make the parameter required, or pin a deterministic default.
 
 Worth promoting to global `CLAUDE.md`: "Conditional substrate" — a code path that fires only on rare runtime state — is the third axis of substrate watching, alongside "code substrate" (file-level shape) and "behavioural substrate" (function-level contract). Code-substrate is caught by additive-only review; behavioural-substrate by rebase-and-test-against-post-merge; conditional-substrate by *depth-aware* review (does any test reach this branch?). The three lesson families compose: a PR can change a public-function contract (behavioural) on a conditional path (conditional) that no existing test reaches (depth) — that's exactly the shape RUL-47 had.
+
+---
+
+---
+date: 2026-05-10
+ticket-context: RUL-55, RUL-31, RUL-34
+template-worthy: maybe
+---
+
+## What happened
+
+RUL-55 worker probed Lever B (deck rebalance — bumping SUBJECT counts in `design/cards.yaml deck:` by 1–2 each) as the second route to push the M2 watchable smoke from 5/10 → 7/10 winners. The hand-over warned about `_drive_to_first_build` fragility (a known issue post-Phase-3 — see the 2026-05-10 "deck-size fragility in test helpers" entry) and reminded the worker to rebase before assuming it's now seed-independent.
+
+What the worker actually found: every Lever-B config that hit ≥7/10 broke a different set of tests via a *different* fragility — the **goal-pool shuffle cascade**. Bumping the deck composition changes the order in which `start_game(seed=0)` consumes the seeded rng, which shifts the goal-pool shuffle (RUL-46 K's `tuple(goal_pool)` post `rng.shuffle`), which lands different goal cards in `active_goals`, which cascades into:
+
+- `test_cards_loader` (asserts on specific cards present in the loaded deck — directly broken by counts change)
+- `test_determinism.test_recycle_path` (the recycle path is reached at round ~13 via specific in-play card draws — shifted by the upstream deck change)
+- `test_jokers.test_full_game_round_trip_with_persistent_when_joker` (asserts joker attaches on a specific round — shifted by the chain of upstream draws)
+
+Worker correctly chose Lever A (PLAY_BIAS tuning, single-line behavioural change with no deck consumption shift) and rejected Lever B. PR #56 landed at 7/10 via Lever A alone; the orchestrator merged it.
+
+## Root cause
+
+The 2026-05-10 "deck-size fragility in test helpers" lesson focused on `_drive_to_first_build` and shipped a fix making *that* helper seed-independent. But the deck-composition fragility was wider: any test that constructs `start_game(seed=N)` and asserts on specific downstream state (loaded card identities, joker attachment rounds, the recycle path landing on a specific round) is implicitly fragile to deck-counts changes — not because the test depends on lucky seed-0 deals, but because the rng consumption order chains across `cards.shuffle(deck)` → `cards.shuffle(goal_pool)` → all subsequent `start_game` draws → all subsequent `_refill_hands` draws → the round at which any specific in-play assertion lands.
+
+The existing watchpoint in `PROJECT_CONTEXT.md` ("Substrate-and-data tickets must split DoD into (a) data loadable + (b) data observable in runtime") doesn't cover *which downstream tests will silently break* when (a) ships even with (b) deferred. The fragility surfaced because RUL-55's worker tried the deck-rebalance lever and observed the failure pattern — but the lesson would have been invisible if RUL-55 had stuck with Lever A from the start.
+
+## Fix in project
+
+- STATUS.md "Open judgment calls" now lists the three test files that must be rebased + run when a PR changes `cards.yaml deck:` composition. Future deck-rebalance tickets reference this list explicitly.
+- Memory rule on the hand-over path typo saved (`feedback_cards_yaml_path.md`): `design/cards.yaml`, not `engine/data/cards.yaml`. Wrong-path hand-overs cost reading time + lookup overhead and may mislead workers about what they're touching.
+
+## Proposed template change
+
+`workflows/pr-merge.md` step 1.5 sub-bullet (existing): "If the PR is part of a parallel fan where a sibling has already landed a contract change, rebase the PR's branch against post-merge main and run the affected test files before squash-merging." Extend with: "If the PR changes `design/cards.yaml deck:` composition (counts of any card kind), the *affected test files* explicitly include `test_cards_loader.py`, `test_determinism.py`, and `test_jokers.py::test_full_game_round_trip_with_persistent_when_joker` — these are the known fragile downstream sites as of 2026-05-10. Re-probe + extend this list when the next deck-rebalance candidate fails on a new test."
+
+Per-project candidate for a `tests/seed_dependency_index.md` doc: maintain a small index of "tests fragile to deck composition" so workers and orchestrator have a single page to consult before deck changes. Promote to global protocol if the same pattern surfaces in another project (rng-consumption-order fragility is generic across any deterministic engine).
