@@ -1,4 +1,4 @@
-_Last edited: 2026-05-10 by RUL-47_
+_Last edited: 2026-05-10 by RUL-54_
 
 # rules.py — round flow phase machine
 
@@ -42,7 +42,7 @@ persistent rules); JOKER attachment, effect-card draw + dispatch are wired.
 - After `PLAYER_COUNT` turns: all slots filled → `RESOLVE`; any slot empty → fail-and-rotate.
 - `play_card` removes the played card from the active player's hand by id+identity; raises if not present.
 
-### RNG contract (RUL-18, extended by RUL-47)
+### RNG contract (RUL-18, extended by RUL-47, hardened by RUL-54)
 
 | Function | RNG usage |
 |---|---|
@@ -51,9 +51,25 @@ persistent rules); JOKER attachment, effect-card draw + dispatch are wired.
 | `enter_resolve(state, *, rng)` | Step 12 refill: shuffles `state.discard` back into `state.deck` when needed |
 | `advance_phase(state, *, rng)` | Forwards `rng` to both `enter_round_start` and `enter_resolve`; other branches don't shuffle |
 
-`rng=None` falls back to a fresh non-deterministic `random.Random()` for the
-refill — adequate when determinism doesn't matter (ad-hoc REPL calls). Tests
-and CLI pass an explicit `random.Random(seed_variant)` for reproducibility.
+`rng=None` is tolerated on the public entry points only when the reshuffle
+path does not actually fire (e.g. a single short-state resolve where the deck
+has cards to spare). Reaching a reshuffle without an rng raises `ValueError`
+(RUL-54) — replacing the previous silent fallback to an unseeded
+`random.Random()` that diverged seeded games at round ~13 once the 12-card
+effect deck exhausted. Tests and CLI pass an explicit
+`random.Random(seed_variant)` for reproducibility.
+
+CLI rng streams (`cli.run_game`):
+
+| Variant | Seed mask | Consumer |
+|---|---|---|
+| `rng` | `seed` | bot decisions |
+| `refill_rng` | `seed ^ 0x5EED` | `enter_resolve` step-12 main-deck refill |
+| `dice_rng` | `seed ^ 0xD1CE` | OP-only comparator dice rolls (RUL-42) |
+| `effect_rng` | `seed ^ 0xEFFC` | `enter_round_start` step-6 effect-deck recycle (RUL-54) |
+
+Streams are disjoint so reordering bot picks doesn't reshuffle dice rolls or
+deck recycles.
 
 The seed is intentionally NOT carried on `GameState` (substrate stays
 additive-only and frozen); the rng threads through the public entry points
@@ -156,6 +172,13 @@ Effect-deck draw / discard (RUL-47):
 - `test_effect_deck_recycles_when_empty`
 - `test_effect_deck_recycle_is_seed_deterministic`
 - `test_multi_round_game_conserves_effect_card_total`
+
+End-to-end determinism (RUL-54): `engine/tests/test_determinism.py`
+- `test_run_game_is_deterministic_past_effect_deck_recycle[0..2]` — two
+  back-to-back `cli.run_game` invocations on the same seed past round ~13
+  produce byte-identical stdout
+- `test_recycle_path_is_actually_exercised` — guards that the run actually
+  crossed the recycle threshold so the determinism check is meaningful
 
 Misc:
 - `test_dealer_rotates_across_four_rounds_via_failed_rules`

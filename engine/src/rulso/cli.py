@@ -70,6 +70,11 @@ def run_game(
     # RUL-42 (G): comparator dice rng — disjoint from bot decisions and refills
     # so reordering bot picks doesn't reshuffle dice rolls.
     dice_rng = random.Random(seed ^ 0xD1CE)
+    # RUL-54: effect-deck recycle rng — disjoint from bot/refill/dice streams.
+    # The 12-card effect deck recycles around round ~13; before RUL-54 the CLI
+    # never threaded this through and enter_round_start fell back to an unseeded
+    # random.Random(), diverging seeded games past the first recycle.
+    effect_rng = random.Random(seed ^ 0xEFFC)
     state = _start_game(seed)
     _emit(out, "game_start", seed=seed, max_rounds=max_rounds, players=PLAYER_COUNT)
 
@@ -83,7 +88,7 @@ def run_game(
             rounds_started += 1
             prior_dealer = state.dealer_seat
             state = advance_phase(
-                state
+                state, rng=effect_rng
             )  # ROUND_START → BUILD or back to ROUND_START on dealer-no-seed
             if state.phase is Phase.ROUND_START:
                 _narrate_dealer_seed_failure(out, state, prior_dealer)

@@ -169,7 +169,7 @@ def test_double_applies_effect_twice() -> None:
         joker=_joker("JOKER:DOUBLE"),
     )
     state = _resolve_state(_player("p0"), _player("p1", seat=1), rule=rule)
-    new = enter_resolve(state)
+    new = enter_resolve(state, rng=random.Random(0))
     assert new.players[0].vp == 2  # +1 +1
     # DOUBLE leaves no persistent residue — fragments discard normally.
     assert len(new.persistent_rules) == 0
@@ -416,7 +416,7 @@ def test_enter_resolve_drives_each_joker_variant(
     """
     rule = _build_with_joker(variant)
     state = _resolve_state(_player("p0"), _player("p1", seat=1), rule=rule)
-    new = enter_resolve(state)
+    new = enter_resolve(state, rng=random.Random(0))
     assert new.players[0].vp == expected_p0_vp
     if expect_persistent:
         assert len(new.persistent_rules) == 1
