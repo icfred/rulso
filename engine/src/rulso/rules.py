@@ -6,19 +6,22 @@ in ``design/state.md``. Shop and persistent-rule WHILE tick are stubbed — see
 
 All functions return a new ``GameState``; the input state is never mutated.
 
-RNG contract (RUL-18, extended by RUL-47):
+RNG contract (RUL-18, extended by RUL-47, hardened by RUL-54):
 
 * ``start_game(seed)`` performs the initial deck shuffle and 4×HAND_SIZE deal
   using ``random.Random(seed)``. The rng is consumed and discarded — same seed
   in, same opening state out.
-* ``enter_round_start(state, *, rng=None)`` consumes the rng to reshuffle
+* ``enter_round_start(state, *, rng=None)`` requires an rng to reshuffle
   ``state.effect_discard`` back into ``state.effect_deck`` when step 6's draw
-  finds an empty deck (RUL-47). ``rng=None`` falls back to a fresh
-  non-deterministic ``random.Random()``.
+  finds an empty deck (RUL-47). ``rng=None`` is tolerated only when the
+  recycle path does not trigger; reaching it without an rng raises
+  ``ValueError`` rather than silently falling back to a non-deterministic
+  ``random.Random()`` (RUL-54 — the silent fallback diverged seeded games at
+  round ~13 once the 12-card effect deck exhausted).
 * ``enter_resolve(state, *, rng=None)`` shuffles ``state.discard`` back into
-  ``state.deck`` when refilling depletes the main deck. Pass an explicit
-  ``random.Random(...)`` for deterministic mid-game refills (cli.py does).
-  ``rng=None`` falls back to a fresh non-deterministic ``random.Random()``.
+  ``state.deck`` when refilling depletes the main deck. Same contract as
+  ``enter_round_start``: ``rng=None`` is fine when the deck has enough cards,
+  but reaching the reshuffle without one raises ``ValueError``.
 * ``advance_phase(state, *, rng=None)`` forwards ``rng`` to both
   ``enter_round_start`` and ``enter_resolve``; other phase boundaries don't
   shuffle.
@@ -161,8 +164,9 @@ def enter_round_start(state: GameState, *, rng: random.Random | None = None) -> 
 
     ``rng`` is consumed by the step-6 effect-deck draw to reshuffle
     ``state.effect_discard`` back into ``state.effect_deck`` when the deck is
-    empty (RUL-47). ``rng=None`` falls back to a fresh non-deterministic
-    ``random.Random()``.
+    empty (RUL-47). ``rng=None`` is tolerated only when the recycle path
+    does not trigger; reaching it without an rng raises ``ValueError``
+    (RUL-54 — see module docstring).
     """
     new_round = state.round_number + 1
     # Step 2: status tick — BURN drains chips, MUTE clears (RUL-40, RUL-30).
@@ -182,9 +186,8 @@ def enter_round_start(state: GameState, *, rng: random.Random | None = None) -> 
     # effect_discard if the deck is empty per design/effects-inventory.md
     # "Deck-empty reshuffle". ``revealed_effect`` stays None when both piles
     # are empty (no cards to draw — same path the NOOP card exercises).
-    draw_rng = rng if rng is not None else random.Random()
     revealed_effect, effect_deck, effect_discard = _draw_effect_card(
-        state.effect_deck, state.effect_discard, draw_rng
+        state.effect_deck, state.effect_discard, rng
     )
     # Step 7: dealer plays the condition template + slot 0.
     condition = _draw_condition_template()
@@ -261,8 +264,10 @@ def enter_resolve(state: GameState, *, rng: random.Random | None = None) -> Game
     """Run resolve steps 1-13 atomically. Ends in ROUND_START or END.
 
     ``rng`` is consumed by the deck-refill shuffle (step 12) when ``state.deck``
-    runs short. Pass ``random.Random(seed)`` for deterministic refills; ``None``
-    falls back to a fresh non-deterministic ``random.Random()``.
+    runs short. Pass ``random.Random(seed)`` for deterministic refills.
+    ``rng=None`` is tolerated only when the reshuffle does not trigger;
+    reaching it without an rng raises ``ValueError`` (RUL-54 — see module
+    docstring).
     """
     if state.phase is not Phase.RESOLVE:
         raise ValueError(f"enter_resolve requires phase=RESOLVE, got {state.phase}")
@@ -343,7 +348,7 @@ def enter_resolve(state: GameState, *, rng: random.Random | None = None) -> Game
     # Step 11: rotate dealer.
     new_dealer = (state.dealer_seat + 1) % PLAYER_COUNT
     # Step 12: refill hands.
-    refill_rng = rng if rng is not None else random.Random()
+    refill_rng = rng
     state_post_discard = state.model_copy(
         update={
             "players": cleaned_players,
@@ -514,7 +519,7 @@ def _draw_condition_template() -> ConditionTemplate:
 def _draw_effect_card(
     effect_deck: tuple[Card, ...],
     effect_discard: tuple[Card, ...],
-    rng: random.Random,
+    rng: random.Random | None,
 ) -> tuple[Card | None, tuple[Card, ...], tuple[Card, ...]]:
     """Pop the top card from ``effect_deck``; recycle ``effect_discard`` if empty.
 
@@ -523,13 +528,17 @@ def _draw_effect_card(
     (per design/effects-inventory.md "Deck-empty reshuffle"). The recycle
     shuffles ``effect_discard`` into ``effect_deck`` via ``rng`` and resets the
     discard to empty before popping — mirrors :func:`_refill_hands`'s deck
-    refill so seeded games stay reproducible.
+    refill so seeded games stay reproducible. ``rng=None`` is tolerated when
+    the recycle does not trigger; reaching it without one raises ``ValueError``
+    (RUL-54).
     """
     deck = list(effect_deck)
     discard = list(effect_discard)
     if not deck:
         if not discard:
             return None, (), ()
+        if rng is None:
+            raise ValueError("seeded rng required to recycle effect_discard into effect_deck")
         deck = discard
         rng.shuffle(deck)
         discard = []
@@ -537,13 +546,15 @@ def _draw_effect_card(
     return drawn, tuple(deck), tuple(discard)
 
 
-def _refill_hands(state: GameState, rng: random.Random) -> GameState:
+def _refill_hands(state: GameState, rng: random.Random | None) -> GameState:
     """Step 12: refill each player's hand to ``HAND_SIZE``.
 
     When ``state.deck`` empties mid-refill, shuffles ``state.discard`` back into
     the deck via ``rng`` and continues. If both deck and discard are empty,
     stops drawing for that player (hand stays under ``HAND_SIZE`` until cards
-    return to the discard pile next round).
+    return to the discard pile next round). ``rng=None`` is tolerated when the
+    reshuffle does not trigger; reaching it without one raises ``ValueError``
+    (RUL-54).
     """
     deck = list(state.deck)
     discard = list(state.discard)
@@ -555,6 +566,8 @@ def _refill_hands(state: GameState, rng: random.Random) -> GameState:
             if not deck:
                 if not discard:
                     break
+                if rng is None:
+                    raise ValueError("seeded rng required to recycle discard into deck")
                 deck = discard
                 rng.shuffle(deck)
                 discard = []
