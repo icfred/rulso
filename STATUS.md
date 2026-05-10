@@ -12,54 +12,54 @@ Linear board: https://linear.app/rulso (team `RUL`, projects: Engine / Infra / B
 |---|---|---|---|
 | RUL-5 | M1: Engine core | 4-bot CLI game runs end-to-end, IF rules resolve, state machine sound | **Done** |
 | RUL-15 | M1.5: Watchable engine | First moment the game is *real* | **Done** (closed 2026-05-10) |
-| RUL-24 | M2: Full card set | Every card type and mechanic from cards.yaml works | Phase 1 head fan all merged; Phase 2 ready to plan |
+| RUL-24 | M2: Full card set | Every card type and mechanic from cards.yaml works | Phase 1 + Phase 2 shipped; Phase 3 fan ready to shape |
 | RUL-23 | Meta — orchestrator-authored cross-cutting commits | Permanent home for orchestrator commits | Permanent In Progress |
 
 ## In flight
 
-None. M1.5 SHIPPED (RUL-21 watchable smoke landed; full pipeline produces winners). M2 Phase 1 SHIPPED (RUL-25 ADRs, RUL-26 substrate, RUL-27 bot heuristic, RUL-28/29/30 inventory spikes all merged). Awaiting user sign-off on Phase 2 ticket shape before dispatch.
+None. M2 Phase 2 SHIPPED (RUL-31 cards/state.py substrate, RUL-32 WHEN+WHILE lifecycle, RUL-33 GENEROUS+CURSED labels — all merged 2026-05-10). Awaiting user sign-off on Phase 3 ticket shape before dispatch.
 
-## M1.5 Done summary
+## M2 Phase 2 Done summary
 
-13 sub-issues closed: RUL-16 (cards-inventory spike), RUL-17 (cards.yaml + loader), RUL-18 (deal real hands + CONDITION cards + naming reconciliation), RUL-19 (LEADER + WOUNDED labels + ADR-0001), RUL-20 (+1 VP effect), RUL-21 (watchable smoke), RUL-22 (label scoping wiring). M1.5 produced a watchable game where bots play real cards, IF rules resolve, labels scope, and winners emerge across 10 seeds at 200 rounds.
-
-## M2 Phase 1 Done summary
-
-7 sub-issues closed:
-- **RUL-25** — ADR-0002 (OP-only comparator + dice fills N), ADR-0003 (`SUBJECT.scope_mode: singular | existential | iterative`), ADR-0004 (operator MODIFIERs ratify `RuleBuilder.slots[i].modifiers` with `targets` list).
-- **RUL-26** — state.py additive: `Player.history.hits_taken_this_game`, `GameState.shop_deck`, `active_goals` retyped to `tuple[Card | None, ...]`. persistence.py scaffolding live (stub bodies for `tick_while_rules` and `check_when_triggers`; real `add_persistent_rule`).
-- **RUL-27** — bot heuristic (PLAY_BIAS = 0.85). Unblocked RUL-21.
-- **RUL-28** — `design/goals-inventory.md` (7 starter goals; predicate vocabulary; CHAINED interaction; deck-empty behaviour).
-- **RUL-29** — `design/effects-inventory.md` (12 starter effect cards; revealed-effect lifecycle; status-applying effects; magnitude/target_modifier dispatch table).
-- **RUL-30** — `design/status-tokens.md` (5 tokens; per-token apply/clear sources; interaction matrix; engine-side dispatch recommendation: new `status.py` module).
+3 sub-issues closed:
+- **RUL-31** — state.py additive (`CardType.EFFECT`, `Card.scope_mode`, `GoalCard`); cards.yaml extended with full M2 vocabulary (CONDITION when/while; SUBJECT ANYONE/EACH; NOUN cards/rules/hits/gifts/rounds/burn; MODIFIER OP-only comparators; operator MODIFIERs with targets; JOKERs; effect_cards section; goal_cards section); cards.py loader covers new sections + `load_effect_cards` / `load_goal_cards` helpers. **Deck composition held byte-identical** — see Phase 3 cross-cutting requirement.
+- **RUL-32** — `persistence.tick_while_rules` and `persistence.check_when_triggers` shipped per state.md "Persistent Rules — Lifetimes". WHILE persists; WHEN FIFO + discard-on-fire; depth-3 recursion cap; dormant-label handling. Effect application is a Phase 2 stub (promotes WHEN/WHILE template to IF and reuses `effects.resolve_if_rule` for +1 VP) — Phase 3 effect dispatcher replaces.
+- **RUL-33** — GENEROUS = argmax(`history.cards_given_this_game`); CURSED = argmax(`status.burn`). ADR-0001 tie-break: ties → all; zero → empty. MARKED/CHAINED stay empty pending status-apply ticket.
 
 ## Open judgment calls
 
 None.
 
-## M2 Phase 2 — proposed ticket shape (awaiting sign-off)
+## M2 Phase 3 — proposed ticket shape (awaiting sign-off)
 
-3 parallel-safe head-fan tickets:
+Phase 2 substrate is in. Phase 3 wires consumers; this is the ~8-wide fan. **All depend on Phase 2 only — none depend on each other within Phase 3 unless flagged.** Substrate-first discipline holds; only one Phase 3 ticket touches `state.py` (status apply/decay introduces `status.py`). Order roughly maps to risk + dependency depth.
 
 | Proposed ticket | Scope | Touch surface | Parallel-safe? |
 |---|---|---|---|
-| **A** — M2 cards content + loader extensions | Extend cards.yaml with M2 SUBJECTs (ANYONE/EACH per ADR-0003 scope_mode), full M2 NOUNs (CARDS/RULES/HITS/GIFTS/ROUNDS/BURN_TOKENS), operator MODIFIERs (per ADR-0004 with targets), JOKERs, full effect-cards section per RUL-29 inventory, goals section per RUL-28. Loader handles new card-type variants. **state.py additive**: `CardType.EFFECT`, `GoalCard` model (per RUL-29 + RUL-28 worker flags), `scope_mode` field on SUBJECT cards (per ADR-0003). | `design/cards.yaml`, `engine/src/rulso/cards.py`, `engine/src/rulso/state.py` (additive), tests, new docs | yes (only ticket touching cards.yaml + state.py) |
-| **B** — WHEN + WHILE rule lifecycle | Implement `persistence.tick_while_rules` (round-start tick + on-state-change re-eval) and `persistence.check_when_triggers` (after every state mutation in resolve, depth-cap 3 per state.md). Dormant-label handling. | `engine/src/rulso/persistence.py`, `engine/src/rulso/rules.py` (additive — already wired by RUL-26), tests | yes (only ticket touching persistence.py) |
-| **C** — GENEROUS + CURSED labels | Extend `labels.recompute_labels` to compute GENEROUS (argmax player.history.cards_given_this_game) and CURSED (argmax player.status.burn) per ADR-0001's tie-break. M1.5 stubs become live. | `engine/src/rulso/labels.py` (additive), tests | yes (only ticket touching labels.py) |
+| **D — effect dispatcher** | Replace the M1.5 `+1 VP` stub in `effects.resolve_if_rule` with a real `revealed_effect`-driven dispatcher. Parses effect-card name (`<KIND>[:<MAG>][@<TARGET_MOD>]`); applies GAIN_CHIPS / LOSE_CHIPS / GAIN_VP / LOSE_VP / DRAW / NOOP. Status-applying effects (APPLY_BURN / APPLY_MUTE / APPLY_BLESSED / APPLY_CHAINED / CLEAR_BURN) deferred to ticket E (status.py). Wires `rules.start_game` to seed `effect_deck` from `load_effect_cards`. **Extends `deck:`** with effect_cards seeding. | `engine/src/rulso/effects.py`, `engine/src/rulso/rules.py` (start_game seeding only), tests | yes |
+| **E — status apply/decay (new `status.py`)** | New module `status.py` per RUL-30 spike. Implements per-token apply/clear/decay matrix from `design/status-tokens.md`. Wires APPLY_BURN / APPLY_MUTE / APPLY_BLESSED / APPLY_CHAINED / CLEAR_BURN effect kinds (consumed by D). Round-start decay tick. **Extends `state.py`** if RUL-30 spike's recommendation needs more `Player.status` fields than already present (additive only). | `engine/src/rulso/status.py` (new), `engine/src/rulso/effects.py` (status-applying dispatcher entries), `engine/src/rulso/rules.py` (round-start decay hook), tests | depends on D for effect-kind dispatch table — sequence after D, or parallel if D's dispatcher exposes a registration hook |
+| **F — ANYONE / EACH_PLAYER scoping** | Extend `effects._scope_subject` to honour `Card.scope_mode`: `existential` (ANYONE → first matching player makes the rule fire); `iterative` (EACH_PLAYER → fire effect once per matching player). Singular path unchanged (default). **Extends `deck:`** with subj.anyone + subj.each copies. | `engine/src/rulso/effects.py`, tests | yes |
+| **G — comparator dice (OP-only MODIFIERs)** | Extend `effects._parse_quant` (or equivalent) to handle OP-only comparator cards (LT/LE/GT/GE/EQ without baked N). Per ADR-0002: when an OP-only comparator is played, draw N from 1d6 or 2d6 (player choice — bot picks 2d6 by default). **Extends `deck:`** with mod.cmp.{lt,le,gt,ge,eq} copies. | `engine/src/rulso/effects.py` (or `grammar.py`), `engine/src/rulso/bots/random.py` (dice choice), tests | yes |
+| **H — operator MODIFIER fold** | Implement ADR-0004 operator attachment: `RuleBuilder.slots[i].modifiers` accepts operator MODIFIERs with `targets`. BUT/AND/OR fold into the SUBJECT or NOUN slot during render + scope; MORE_THAN/AT_LEAST fold into QUANT comparator semantics. **Extends `deck:`** with mod.op.* copies. | `engine/src/rulso/grammar.py`, `engine/src/rulso/effects.py`, `engine/src/rulso/state.py` (additive — ratify RuleBuilder slot.modifiers if not already present), tests | depends on the RuleBuilder slot-modifiers shape — verify additive-only at start; may parallel with D/E/F/G |
+| **I — polymorphic NOUN reads** | Extend the NOUN evaluator (`effects._evaluate_has` or equivalent) to handle `CARDS / RULES / HITS / GIFTS / ROUNDS / BURN_TOKENS` per `design/cards-inventory.md` M2 NOUN table. **Extends `deck:`** with noun.{cards,rules,hits,gifts,rounds,burn} copies. | `engine/src/rulso/effects.py`, tests | yes |
+| **J — JOKER attachment** | Implement JOKER:PERSIST_WHEN / PERSIST_WHILE / DOUBLE / ECHO. Persist variants promote the rule's CONDITION to WHEN/WHILE via `persistence.add_persistent_rule`. DOUBLE / ECHO modify effect application count. **Extends `deck:`** with jkr.* copies. **Depends on RUL-32** (persistence.add_persistent_rule). | `engine/src/rulso/effects.py`, `engine/src/rulso/legality.py` (JOKERs are legal as a 4th play type), `engine/src/rulso/bots/random.py` (bot picks legal JOKER), tests | yes (RUL-32 done) |
+| **K — goal cards engine** | Implement the goal-claim predicate registry per RUL-28's spike: `chips_at_least_75`, `chips_under_10`, `rules_completed_at_least_3`, `gifts_at_least_2`, `burn_at_least_2`, `free_agent`, `full_hand`. Per-round claim check; awards `vp_award`; `single` discards + replenishes from `goal_deck`, `renewable` stays. Wires `rules.start_game` to seed `goal_deck` + `active_goals` from `load_goal_cards`. | new `engine/src/rulso/goals.py`, `engine/src/rulso/rules.py` (start_game seeding + per-round claim hook), tests | yes |
 
-After A/B/C land, Phase 3 fan opens: effect dispatcher (RUL-29's table), status apply/decay (new status.py per RUL-30), ANYONE/EACH scoping, comparator dice, JOKER conversion (depends on B), operator evaluation, polymorphic rendering, goal cards engine. ~8 wide.
+After Phase 3 fan: SHOP round + M2 watchable smoke (single-track tail).
 
-After Phase 3: SHOP round + M2 watchable smoke (single-track tail).
+### Phase 3 cross-cutting requirement
+
+Each Phase 3 ticket whose consumer wiring lands new card variants **must extend `cards.yaml` `deck:` with copies for those variants** as part of the same PR. RUL-31 deliberately held the deck identical because no consumer was ready; Phase 3 tickets each unblock a slice of the M2 vocabulary and own the deck extension for their slice. PR-merge spot-check: confirm the deck rows for the variant the ticket wires are present.
 
 ## Done (chronological, this session)
 
-(M1 + M1.5 + M2 Phase 1 = ~25 tickets shipped)
+(M1 + M1.5 + M2 Phase 1 + M2 Phase 2 = ~28 tickets shipped)
 
 ## Locked decisions / substrate watchpoints
 
 - `engine/src/rulso/state.py` is the contract. **Additive-only edits.**
 - Pydantic v2 + frozen by default; tuples for collections.
-- M2 stubs raise `NotImplementedError("M2: …")` — most will go live in Phase 2-3.
+- M2 stubs raise `NotImplementedError("M2: …")` — most replaced in Phase 3.
 - Pre-commit hook resolves `ruff` via `uv run --project engine`.
 - **Active ADRs**: ADR-0001 (floating-label definitions), ADR-0002 (comparator dice flow: OP-only cards, dice fills N), ADR-0003 (SUBJECT.scope_mode enum: singular | existential | iterative), ADR-0004 (operator MODIFIER attachment + targets list).
 - Workers do not edit `docs/<area>/readme.md` — orchestrator owns the index, batched into RUL-23 commits per merge sweep.
@@ -67,6 +67,7 @@ After Phase 3: SHOP round + M2 watchable smoke (single-track tail).
 - All orchestrator-authored cross-cutting commits route through `RUL-23:`.
 - Cross-reference identifier names when merging spike/data PRs — grep the engine for downstream consumers.
 - Card naming convention (M1.5-ratified, M2-extended): SUBJECT names use `Player.id` literals (`p0..p3`) and `labels.LABEL_NAMES` keys (`"THE LEADER"`); effect-card IDs follow `eff.<status>.<verb>.[N]` (RUL-29's convention; RUL-30 amended to match in PR #29).
+- **Substrate-and-data tickets** must split DoD into (a) data loadable + (b) data observable in runtime. Holding (a) without (b) is correct when the consumer side isn't ready — RUL-31 lesson, 2026-05-10.
 
 ## Conventions (also in CLAUDE.md, restated for reflex)
 

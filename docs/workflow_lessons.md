@@ -190,3 +190,28 @@ Three reinforcing factors. (1) `gh pr merge` advances the remote ref but doesn't
 ## Proposed template change
 
 Global `CLAUDE.md` worker contract section could grow a one-liner: "Worktrees ALWAYS branch from `origin/main`, not local HEAD. Run `git fetch origin` first." This is a generic-enough invariant that it belongs in the global protocol — every personal project where the orchestrator merges PRs without pulling will hit this. Bonus: adding a tiny `make worktree` / shell helper that wraps `git fetch origin && git worktree add .worktrees/$1 -b $1 origin/main` would make it impossible to get wrong; consider per project.
+
+---
+
+---
+date: 2026-05-10
+ticket-context: RUL-31
+template-worthy: yes
+---
+
+## What happened
+
+RUL-31's DoD shipped two clauses that contradict each other under any non-trivial reading. The "cards.yaml extensions" section listed: "**deck:** composition: add per-card-kind copies for the new main-deck additions (SUBJECTs, NOUNs, MODIFIERs, JOKERs)." The "Hard constraints" section listed: "No behaviour change for M1.5 paths. `uv run rulso --seed 0` produces identical output before/after." Any deck change reshuffles seed 0 — those bullets cannot both hold. Worse, most M2 cards crash the M1.5 engine when drawn (new NOUNs raise in `_evaluate_has`; OP-only comparators raise in `_parse_quant`; operator MODIFIERs land in QUANT and raise the same way). Even silently-safe additions (ANYONE/EACH no-op via empty scope; JOKERs stay in-hand) regressed the M1.5 watchable smoke 0/10 vs 6/10 baseline. The worker chose the hard constraint, held the deck composition byte-identical, documented the rationale inline in cards.yaml, and flagged the deviation in the handback. Orchestrator merged with accept-and-file-followup.
+
+## Root cause
+
+The ticket was shaped before its consumer-side dependencies were cataloged. The DoD assumed "add data + extend deck = M1.5 keeps working" because previous content tickets (RUL-17 baseline) followed exactly that shape. But the new M2 cards are not drop-in compatible with M1.5 consumers — every new SUBJECT/NOUN/MODIFIER/JOKER variant requires a Phase 3 engine ticket to teach a consumer how to handle it. The deck-extension belongs in each Phase 3 consumer-wiring ticket, not in the substrate-and-data ticket. The orchestrator wrote the ticket from the inventory docs (which list the cards) without walking the consumer side (`_evaluate_has`, `_parse_quant`, `_scope_subject`) to ask "what would happen if a fresh card showed up at every consume site". The worker's flag is the right resolution; what's missing is a ticket-shape rule that prevents the contradiction in the first place.
+
+## Fix in project
+
+- The Phase 3 fan owns deck-extension per consumer wiring. Captured in STATUS.md "Phase 3 cross-cutting requirement" so each Phase 3 ticket's DoD includes "extend `deck:` for the cards your consumer now handles".
+- For the next substrate-and-data ticket: the DoD should explicitly list "data is loadable; deck composition unchanged" rather than "add data and extend deck", with the deck extension belonging to the consumer-wiring ticket.
+
+## Proposed template change
+
+Ticket-shape rule for "introduces vocabulary that downstream code will consume" tickets (a pattern already covered in part by the 2026-05-09 cross-reference lesson): when the deliverable is data + a substrate field, the DoD must split into (a) **data loadable** (parser + tests) and (b) **data observable in the runtime path** (consumer wiring + smoke regression). If (b) lives in a separate ticket, (a)'s DoD must explicitly include "the new vocabulary is data-only at this stage; deck composition / runtime exposure is held identical to the prior milestone". Otherwise the contradiction surfaces at the worker rather than the ticket-author. Worth promoting to global `CLAUDE.md` ticket-shape rule because it generalises beyond cards: every protocol-shape ticket, every status-token ticket, every label-key ticket has the same risk.
