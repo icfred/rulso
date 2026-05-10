@@ -305,7 +305,10 @@ def test_enter_round_start_ticks_burn_and_mute_via_status_module() -> None:
     burned = state.players[0].model_copy(
         update={
             "chips": 30,
-            "status": PlayerStatus(burn=2, mute=True, blessed=True, marked=True, chained=True),
+            # blessed deliberately False — RUL-49 routes the BURN tick through
+            # ``consume_blessed_or_else``, so blessed=True would be consumed
+            # here. Cover that path in ``test_tick_round_start_blessed_*``.
+            "status": PlayerStatus(burn=2, mute=True, blessed=False, marked=True, chained=True),
         }
     )
     state = state.model_copy(update={"players": (burned,) + state.players[1:]})
@@ -314,9 +317,7 @@ def test_enter_round_start_ticks_burn_and_mute_via_status_module() -> None:
     assert p0.chips == 30 - BURN_TICK * 2
     assert p0.status.burn == 2  # persists
     assert p0.status.mute is False  # one-round clear
-    # tick_round_start touches only burn / mute — the other tokens are
-    # untouched at this site.
-    assert p0.status.blessed is True
+    # tick_round_start leaves marked / chained alone at this site.
     assert p0.status.marked is True
     assert p0.status.chained is True
 
@@ -370,3 +371,90 @@ def test_enter_resolve_clears_marked_via_status_module() -> None:
     assert p0.status.mute is True
     assert p0.status.blessed is True
     assert p0.status.chained is True
+
+
+# --- RUL-49: BLESSED + chip-loss wiring -------------------------------------
+
+
+def test_dispatch_lose_chips_cancelled_by_blessed_then_applies_after_clear() -> None:
+    """BLESSED cancels the first LOSE_CHIPS, clears, second LOSE_CHIPS lands."""
+    state = _state_with(_player("p0", chips=50, blessed=True), revealed=_effect("LOSE_CHIPS:5"))
+    state = dispatch_effect(state, state.revealed_effect, frozenset({"p0"}))
+    assert state.players[0].chips == 50  # first loss cancelled
+    assert state.players[0].status.blessed is False  # token consumed
+    state = dispatch_effect(state, state.revealed_effect, frozenset({"p0"}))
+    assert state.players[0].chips == 45  # second loss lands
+    assert state.players[0].status.blessed is False
+
+
+def test_dispatch_lose_chips_blessed_consumed_independently_per_target() -> None:
+    """Multi-target LOSE_CHIPS: only blessed targets cancel; others lose chips."""
+    state = _state_with(
+        _player("p0", chips=50, blessed=True),
+        _player("p1", seat=1, chips=50, blessed=False),
+        revealed=_effect("LOSE_CHIPS:5"),
+    )
+    out = dispatch_effect(state, state.revealed_effect, frozenset({"p0", "p1"}))
+    assert out.players[0].chips == 50  # blessed cancelled
+    assert out.players[0].status.blessed is False
+    assert out.players[1].chips == 45  # unblessed lost chips
+    assert out.players[1].status.blessed is False
+
+
+def test_dispatch_lose_chips_zero_magnitude_does_not_consume_blessed() -> None:
+    """``LOSE_CHIPS:0`` is a no-op — must not silently consume a held BLESSED."""
+    state = _state_with(_player("p0", chips=50, blessed=True), revealed=_effect("LOSE_CHIPS:0"))
+    out = dispatch_effect(state, state.revealed_effect, frozenset({"p0"}))
+    assert out.players[0].chips == 50
+    assert out.players[0].status.blessed is True
+
+
+def test_tick_round_start_blessed_cancels_burn_drain_and_clears() -> None:
+    """Round 1: BLESSED cancels the BURN tick chip-drain; BURN tokens persist."""
+    p = status.tick_round_start(_player(chips=50, burn=2, blessed=True))
+    assert p.chips == 50  # drain cancelled
+    assert p.status.blessed is False  # token consumed
+    assert p.status.burn == 2  # BURN tokens persist
+
+
+def test_tick_round_start_blessed_then_unblessed_drains_next_round() -> None:
+    """Round 1's drain is cancelled by BLESSED; round 2's drain applies."""
+    p = _player(chips=50, burn=2, blessed=True)
+    p = status.tick_round_start(p)
+    assert p.chips == 50
+    assert p.status.blessed is False
+    p = status.tick_round_start(p)
+    assert p.chips == 50 - BURN_TICK * 2  # round 2 drains normally
+    assert p.status.burn == 2
+
+
+def test_tick_round_start_blessed_with_zero_burn_keeps_blessed() -> None:
+    """No BURN → no drain → BLESSED is not a 'chip-loss event' here. Token stays."""
+    p = status.tick_round_start(_player(chips=50, burn=0, blessed=True))
+    assert p.chips == 50
+    assert p.status.blessed is True  # untouched (no chip-loss to cancel)
+
+
+def test_tick_round_start_blessed_clears_mute_alongside_drain_cancellation() -> None:
+    """BLESSED cancels the BURN drain; MUTE clear still fires (separate decay)."""
+    p = status.tick_round_start(_player(chips=50, burn=1, blessed=True, mute=True))
+    assert p.chips == 50
+    assert p.status.blessed is False
+    assert p.status.mute is False  # MUTE decays regardless of BLESSED
+
+
+def test_tick_round_start_multi_player_blessed_consumed_independently() -> None:
+    """ANYONE/EACH-style fan-out: each player's BLESSED is consumed independently."""
+    players = (
+        _player("p0", chips=50, burn=2, blessed=True),  # cancelled, blessed clears
+        _player("p1", seat=1, chips=50, burn=0, blessed=True),  # no drain, blessed stays
+        _player("p2", seat=2, chips=50, burn=2, blessed=False),  # drain applies
+        _player("p3", seat=3, chips=50, burn=0, blessed=False),  # no-op
+    )
+    ticked = tuple(status.tick_round_start(p) for p in players)
+    assert (
+        ticked[0].chips == 50 and ticked[0].status.blessed is False and ticked[0].status.burn == 2
+    )
+    assert ticked[1].chips == 50 and ticked[1].status.blessed is True
+    assert ticked[2].chips == 50 - BURN_TICK * 2 and ticked[2].status.blessed is False
+    assert ticked[3].chips == 50 and ticked[3].status.blessed is False
