@@ -126,7 +126,7 @@ What state property the comparator reads. Read by `effects.py` / `rules.py` eval
 |---|---|---|
 | `noun.cards` | `CARDS` | `len(player.hand)` |
 | `noun.rules` | `RULES` | count of persistent rules naming the player as subject |
-| `noun.hits` | `HITS` | count of effects landed on the player this game |
+| `noun.hits` | `HITS` | `player.history.hits_taken_this_game` |
 | `noun.gifts` | `GIFTS` | `player.history.cards_given_this_game` |
 | `noun.rounds` | `ROUNDS` | `state.round_number` (player-agnostic; treated as broadcast) |
 | `noun.burn` | `BURN_TOKENS` | `player.status.burn` |
