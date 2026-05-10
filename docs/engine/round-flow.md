@@ -112,11 +112,10 @@ substrate file (`state.py`, `effects.py`, `labels.py`, `grammar.py`,
 
 ### M1 stubs that survive
 
-- **Shop check** (`round_start` step 5): bypassed.
-- **WHILE-rule tick** (`round_start` step 4): wired to `persistence.tick_while_rules` (RUL-26); no-op when `state.persistent_rules == ()`. Real per-rule evaluation lands with the M2 WHILE-rule feature ticket.
-- **JOKER attachment** (`resolve` step 5): raises `NotImplementedError("M2: joker attachment")` if `active_rule.joker_attached` is set. M1 never attaches.
-- **Effect application** (`resolve` steps 1-4): wired to `effects.resolve_if_rule` for IF rules. WHEN/WHILE templates raise no error (only IF lands in M1.5's CONDITION deck) but their effects won't apply until M2 persistent rules land.
-- **Goal claim** (`resolve` step 7): no-op; goals deferred.
+- **Shop check** (`round_start` step 5): bypassed; SHOP phase wiring tracked by RUL-51.
+- **WHILE-rule tick** (`round_start` step 4): wired through `persistence.tick_while_rules` (RUL-32); no-op when `state.persistent_rules == ()`. Per-rule evaluation drives the Phase 3 effect dispatcher (RUL-39).
+- **Effect application** (`resolve` steps 1-4): wired to `effects.resolve_if_rule`. The Phase 3 dispatcher (RUL-39 D) handles `revealed_effect` for all kinds (GAIN/LOSE_CHIPS/VP, DRAW, NOOP) plus status-applying kinds via `status.py` (RUL-40 E). WHEN/WHILE templates fire through the same dispatcher.
+- **Goal claim** (`resolve` step 7): wired via `goals.check_goal_claims` (RUL-46 K). Awards `vp_award`; `single`-kind goals discard + replenish from `goal_deck`; `renewable`-kind goals persist.
 - **Win check** (`resolve` step 9): scans `vp >= VP_TO_WIN`; transitions to `END` if found.
 
 ### Tests

@@ -1,4 +1,4 @@
-_Last edited: 2026-05-10 by RUL-23 (sweep batching RUL-31, RUL-32, RUL-33)_
+_Last edited: 2026-05-10 by RUL-23 (sweep batching Phase 3 fan + Wave 1: RUL-39..46, RUL-47, RUL-48, RUL-50)_
 
 # engine
 
@@ -13,12 +13,14 @@ Python 3.12 package. `uv` managed. Pydantic v2 state, asyncio + `websockets` ser
 | `engine/src/rulso/state.py` | live | frozen pydantic models + constants — see [state-models.md](state-models.md) |
 | `engine/src/rulso/rules.py` | live | round flow phase machine — see [round-flow.md](round-flow.md) |
 | `engine/src/rulso/grammar.py` | live | IF rule grammar (M1: SUBJECT/QUANT/NOUN) — see [if-resolver.md](if-resolver.md) |
-| `engine/src/rulso/effects.py` | live | IF rule effect resolver (M1.5 stub: +1 VP) — see [if-resolver.md](if-resolver.md) |
+| `engine/src/rulso/effects.py` | live | IF rule resolver + revealed-effect dispatcher (RUL-39 D), comparator-dice (RUL-42 G), op-modifier fold (RUL-43 H), polymorphic NOUN reads (RUL-44 I), ANYONE/EACH scoping (RUL-41 F) — see [if-resolver.md](if-resolver.md) |
 | `engine/src/rulso/cli.py` | live | round-by-round CLI runner — see [cli.md](cli.md) |
 | `engine/src/rulso/labels.py` | live | LEADER/WOUNDED (M1.5) + GENEROUS/CURSED (M2 RUL-33); MARKED/CHAINED stay empty pending status-apply ticket — see [labels.md](labels.md) |
 | `engine/src/rulso/cards.py` | live | yaml loader + deck builder. Covers M1.5 + M2 vocabulary (CardType.EFFECT, GoalCard, scope_mode); reads `design/cards.yaml` |
 | `engine/src/rulso/legality.py` | live | small helpers for legal-action selection (M1.5: `first_card_of_type`) — see [legality.md](legality.md) |
-| `engine/src/rulso/persistence.py` | live | WHEN/WHILE rule lifecycle live (RUL-32). Effect application is a Phase 2 stub — Phase 3 effect dispatcher replaces. See [persistence.md](persistence.md) |
+| `engine/src/rulso/persistence.py` | live | WHEN/WHILE rule lifecycle (RUL-32) wired through the Phase 3 effect dispatcher. JOKER PERSIST_WHEN/WHILE/ECHO promote rules via `add_persistent_rule` (RUL-45 J). See [persistence.md](persistence.md) |
+| `engine/src/rulso/status.py` | live | per-token apply/clear/decay matrix (BURN / MUTE / BLESSED / MARKED / CHAINED) per RUL-30 spike; round-start tick replaces M1.5 `_apply_burn_tick` (RUL-40 E). `consume_blessed_or_else` primitive ready; chip-loss call-site flip pending RUL-49 — see [status.md](status.md) |
+| `engine/src/rulso/goals.py` | live | goal-claim engine (RUL-46 K): predicate registry, per-round claim + replenish for `single`, persist for `renewable`; ADR-0005 retypes `goal_deck` / `goal_discard` / `active_goals` to `GoalCard` |
 | `engine/src/rulso/server.py` | stub | websocket entry point |
 | `engine/src/rulso/protocol.py` | stub | engine↔client message types |
 | `engine/src/rulso/bots/__init__.py` | stub | bots package |
@@ -36,6 +38,14 @@ Python 3.12 package. `uv` managed. Pydantic v2 state, asyncio + `websockets` ser
 | `engine/tests/test_cards_loader.py` | live | yaml-deck loader: schema validation, card-type coverage, frozen contract |
 | `engine/tests/test_persistence.py` | live | WHEN/WHILE fire logic + capacity/eviction; FIFO + depth-3 recursion cap |
 | `engine/tests/test_m1_5_watchable.py` | live | M1.5 watchable smoke: 10-seed sweep asserts winners emerge — see [m1-5-smoke.md](m1-5-smoke.md) |
+| `engine/tests/test_effects_dispatch.py` | live | revealed-effect dispatcher (RUL-39 D): GAIN_CHIPS / LOSE_CHIPS / GAIN_VP / LOSE_VP / DRAW / NOOP, registry hook, target_modifier parsing |
+| `engine/tests/test_effects_nouns.py` | live | polymorphic NOUN reads (RUL-44 I): `CARDS / RULES / HITS / GIFTS / ROUNDS / BURN_TOKENS` |
+| `engine/tests/test_effects_comparator.py` | live | OP-only comparator dice (RUL-42 G, ADR-0002): 1d6/2d6 player choice, LT/LE/GT/GE/EQ |
+| `engine/tests/test_effects_op_modifiers.py` | live | operator MODIFIER fold (RUL-43 H, ADR-0004): BUT/AND/OR set-ops on SUBJECT, MORE_THAN/AT_LEAST flip QUANT strictness |
+| `engine/tests/test_effects_scope.py` | live | ANYONE / EACH_PLAYER scoping (RUL-41 F, ADR-0003): existential subset-fire-once, iterative per-player loop |
+| `engine/tests/test_status.py` | live | status apply/decay (RUL-40 E): per-token matrix, round-start BURN tick, MUTE clear, `consume_blessed_or_else` primitive — see [status.md](status.md) |
+| `engine/tests/test_goals.py` | live | goal-claim engine (RUL-46 K): predicate registry, single-claim discard + replenish, renewable persist |
+| `engine/tests/test_jokers.py` | live | JOKER attachment (RUL-45 J): PERSIST_WHEN/WHILE promote, ECHO conditional one-shot WHEN, DOUBLE effect doubling |
 
 ## Commands
 

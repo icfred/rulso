@@ -201,7 +201,7 @@ JOKERs attach to the rule as a whole (`RuleBuilder.joker_attached`). They conver
 | `jkr.persist_when` | `JOKER:PERSIST_WHEN` | converts IF rule into WHEN persistent rule on resolve |
 | `jkr.persist_while` | `JOKER:PERSIST_WHILE` | converts IF rule into WHILE persistent rule |
 | `jkr.double` | `JOKER:DOUBLE` | rule resolves twice in a row |
-| `jkr.echo` | `JOKER:ECHO` | next round, the same rule template fires again with fresh slot fills |
+| `jkr.echo` | `JOKER:ECHO` | promotes the rule as a one-shot WHEN; re-fires next round only if its HAS-condition still holds (conditional, not unconditional — see `design/state.md` Phase: resolve step 6) |
 
 All M2. Deferred to M2 ADR for finalisation; this list is provisional.
 

@@ -41,9 +41,8 @@ _PLAYER_RESOURCE_NOUNS: dict[str, str] = {"CHIPS": "chips", "VP": "vp"}
 
 # RUL-44 M2 polymorphic NOUN render-names. Resolved by ``_noun_value`` against
 # fields outside ``Player.{chips,vp}`` (hand size, history counters, status,
-# state-level reads). All field names verified against state.py — ``HITS`` uses
-# ``PlayerHistory.hits_taken_this_game`` (RUL-26), not the placeholder
-# ``hits_this_round`` named in inventory text.
+# state-level reads). ``HITS`` reads ``PlayerHistory.hits_taken_this_game``
+# (RUL-26).
 _M2_NOUN_NAMES: frozenset[str] = frozenset(
     {"CARDS", "RULES", "HITS", "GIFTS", "ROUNDS", "BURN_TOKENS"}
 )

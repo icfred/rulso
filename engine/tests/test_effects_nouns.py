@@ -166,12 +166,7 @@ def test_noun_rules_no_persistent_rules_reads_zero() -> None:
 
 
 def test_noun_hits_reads_history_field() -> None:
-    """``HITS`` resolves to ``hits_taken_this_game`` per RUL-26 substrate.
-
-    The cards-inventory text uses a placeholder ``hits_this_round``; the
-    actual state field is ``hits_taken_this_game`` (added by RUL-26 for
-    exactly this NOUN). ``_noun_value`` reads the latter.
-    """
+    """``HITS`` resolves to ``PlayerHistory.hits_taken_this_game`` (RUL-26)."""
     p0 = Player(
         id="p0",
         seat=0,
