@@ -28,7 +28,7 @@ from __future__ import annotations
 import random
 
 from rulso import cards as cards_module
-from rulso import effects, labels, legality
+from rulso import effects, labels, legality, persistence
 from rulso.cards import ConditionTemplate
 from rulso.state import (
     BURN_TICK,
@@ -131,9 +131,12 @@ def enter_round_start(state: GameState) -> GameState:
     # The recompute is preserved as the canonical design step 3 hook; the
     # resolver receives labels as a transient parameter from enter_resolve.
     labels.recompute_labels(state.model_copy(update={"players": players}))
-    # Step 4: WHILE-rule tick — M1 has no persistent rules; guard the path.
+    # Step 4: WHILE-rule tick — no-op when no persistent rules (M1.5 path).
     if state.persistent_rules:
-        raise NotImplementedError("M2: persistent rule WHILE tick")
+        tick_state = state.model_copy(update={"players": players, "round_number": new_round})
+        tick_labels = labels.recompute_labels(tick_state)
+        tick_state = persistence.tick_while_rules(tick_state, tick_labels)
+        players = tick_state.players
     # Step 5: shop check — bypassed in M1. See docs/engine/round-flow.md.
     # Step 6: reveal effect card. Real effect-deck draw lands with M2; the
     # stub keeps revealed_effect non-None during BUILD/RESOLVE.
@@ -220,8 +223,10 @@ def enter_resolve(state: GameState, *, rng: random.Random | None = None) -> Game
     # guard the call here to keep the path future-safe.
     if state.active_rule.template is RuleKind.IF:
         state = effects.resolve_if_rule(state, state.active_rule)
-    # Steps 5-7: joker, persistent trigger, goal claim — M2 stubs (joker
-    # already guarded above; the rest are no-ops in M1.5).
+    # Step 6: persistent rule trigger check (no-op when none active).
+    if state.persistent_rules:
+        state = persistence.check_when_triggers(state, labels.recompute_labels(state))
+    # Steps 5 & 7: joker (guarded above) + goal claim — M2 stubs (no-op M1.5).
     # Step 8: label recompute — implicit (computed-not-stored).
     # Step 9: win check.
     winner = _check_winner(state.players)
