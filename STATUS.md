@@ -1,4 +1,4 @@
-_Last updated: 2026-05-10 by orchestrator session — Phase 3 fan dispatched (RUL-39..46, 8 workers)_
+_Last updated: 2026-05-10 by orchestrator session — Phase 3 fan: 6 of 8 merged (D, F-blocked, G, H, I, K); E re-dispatch pending_
 
 # Rulso — orchestrator bootstrap
 
@@ -17,29 +17,31 @@ Linear board: https://linear.app/rulso (team `RUL`, projects: Engine / Infra / B
 
 ## In flight
 
-**Phase 3 fan dispatched 2026-05-10** — 8 worker hand-overs emitted (RUL-39..46) covering D–K from the proposal below. All `parallel-safe`, all under RUL-24, all in Engine project.
+**Phase 3 fan merge sweep 2026-05-10** — 6 of 8 merged. Main fully green, 320 tests passing. Deck total: 50 → 82 (F still pending; final after F = 88). State summary:
 
-| ID | Phase 3 letter | Title |
-|---|---|---|
-| RUL-39 | D | Effect dispatcher (replace +1 VP stub; registry hook for E/J) |
-| RUL-40 | E | Status apply/decay (new status.py + register effect kinds) |
-| RUL-41 | F | ANYONE / EACH_PLAYER scoping (Card.scope_mode) |
-| RUL-42 | G | Comparator dice (OP-only MODIFIERs per ADR-0002) |
-| RUL-43 | H | Operator MODIFIER fold (BUT/AND/OR/MORE_THAN/AT_LEAST per ADR-0004) |
-| RUL-44 | I | Polymorphic NOUN reads (CARDS/RULES/HITS/GIFTS/ROUNDS/BURN_TOKENS) |
-| RUL-45 | J | JOKER attachment (PERSIST_WHEN/PERSIST_WHILE/DOUBLE/ECHO) |
-| RUL-46 | K | Goal cards engine (claim predicates + start_game seeding + per-round check) |
+| ID | Letter | PR | State | Notes |
+|---|---|---|---|---|
+| RUL-39 | D | #37 | **Merged** | Dispatcher + registry hook on main |
+| RUL-40 | E | — | **Paused** — re-dispatch needed | D unblocked; pre-flight in worker hand-back |
+| RUL-41 | F | #35 | **Blocked** — ADR-0003 fix requested | Worker correctly flagged; PR comment posted asking subset (not first-match) semantics |
+| RUL-42 | G | #38 | **Merged** | Comparator dice (ADR-0002) |
+| RUL-43 | H | #36 | **Merged** | Operator MODIFIER fold (ADR-0004) |
+| RUL-44 | I | #34 | **Merged** | Polymorphic NOUN reads |
+| RUL-45 | J | — | In flight | No hand-back yet |
+| RUL-46 | K | #39 | **Merged** | Goal-claim engine; ADR-0005 ratifies retype |
 
-**Adjustment from STATUS proposal**: D ships a `register_effect_kind` registry hook so E and J attach without serial dependency — all 8 truly parallel.
+**Cross-cutting fixes landed via RUL-23 during the sweep**:
+- `revealed_effect=GAIN_VP:1` pin on `test_effects_nouns.py` and `test_goals.py` helpers (D's dispatcher requires it; both PRs slipped through CLEAN merge mechanics into broken main)
+- `_drive_to_first_build` injects a SUBJECT into dealer's hand for deck-size resilience (Phase 3 deck extensions reshuffle seed-0 deals; 14+ pre-existing tests rely on the lucky deal)
+- `test_dealer_first_slot_card_came_from_dealer_hand` inline SUBJECT injection (same fragility, direct `start_game` path)
 
-**Verified before dispatch**: H needs no state.py change (`Slot.modifiers` exists at state.py:139 since RUL-26). K substrate exists at state.py:201..206 since RUL-26.
+**Follow-ups filed**:
+- Round-flow effect-deck draw (D scoped to start_game seeding; `enter_round_start` step 6 still reveals NOOP placeholder)
+- `cards-inventory.md` field-name fix: `noun.hits` reads `hits_taken_this_game`, not the placeholder `hits_this_round`
 
-**Cross-cutting collision flags baked into hand-overs**:
-- `effects.py`: D, E, F, G, H, I, J — section discipline + rebase-on-merge
-- `rules.py.start_game` / round-start: D (effect_deck seed), E (decay tick), K (goal_deck seed + claim hook) — distinct delimited blocks
-- `bots/random.py`: G (dice choice), J (JOKER pick) — additive branches
-- `cards.yaml deck:`: F/G/H/I/J extend distinct sections only; D and K seed from `effect_cards:` / `goal_cards:` (no deck change)
-- `docs/engine/readme.md`: orchestrator-owned
+**Lessons captured** (`docs/workflow_lessons.md`):
+- 2026-05-10: revealed_effect pin fan-out — every Phase 3 PR needed pin; CLEAN merge mechanics didn't catch
+- 2026-05-10: deck-size fragility in test helpers — seed-0 lucky deals invisibly bake into 14+ tests
 
 M2 Phase 2 SHIPPED (RUL-31 cards/state.py substrate, RUL-32 WHEN+WHILE lifecycle, RUL-33 GENEROUS+CURSED labels — all merged 2026-05-10). M1.5 smoke re-contract SHIPPED (RUL-34, merged 2026-05-10).
 

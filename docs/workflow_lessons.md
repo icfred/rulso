@@ -215,3 +215,45 @@ The ticket was shaped before its consumer-side dependencies were cataloged. The 
 ## Proposed template change
 
 Ticket-shape rule for "introduces vocabulary that downstream code will consume" tickets (a pattern already covered in part by the 2026-05-09 cross-reference lesson): when the deliverable is data + a substrate field, the DoD must split into (a) **data loadable** (parser + tests) and (b) **data observable in the runtime path** (consumer wiring + smoke regression). If (b) lives in a separate ticket, (a)'s DoD must explicitly include "the new vocabulary is data-only at this stage; deck composition / runtime exposure is held identical to the prior milestone". Otherwise the contradiction surfaces at the worker rather than the ticket-author. Worth promoting to global `CLAUDE.md` ticket-shape rule because it generalises beyond cards: every protocol-shape ticket, every status-token ticket, every label-key ticket has the same risk.
+
+---
+
+---
+date: 2026-05-10
+ticket-context: RUL-39, RUL-44, RUL-46, RUL-42, RUL-43, RUL-23
+template-worthy: yes
+---
+
+## What happened
+
+D's PR (RUL-39) replaced the M1.5 `+1 VP` stub in `effects.resolve_if_rule` with a `revealed_effect`-driven dispatcher. D's own tests pinned `revealed_effect = GAIN_VP:1` on shared state helpers in `test_resolver.py` and `test_persistence.py` so the existing `+1 VP` assertions still landed. But every other Phase 3 worker (RUL-44 I, RUL-46 K, RUL-42 G, RUL-43 H) authored their own test fixtures BEFORE D was on `origin/main` — their fixtures constructed `GameState(...)` without a `revealed_effect` pin and asserted `vp == 1` post-resolve.
+
+GitHub merge mechanics reported each PR as `MERGEABLE / CLEAN` against post-D `main` because the diffs touched different functions / files (no auto-merge collisions). The orchestrator merged I (RUL-44) on green mergeability — and broke main: 15 tests in `test_effects_nouns.py` started failing. Same pattern recurred for K's `test_goals.py` (2 failures). Then G's rebase exposed a separate cascade: G adds 10 cards to `cards.yaml deck:`, which reshuffles seed-0 deals in `test_round_flow.py` — 14 pre-existing tests that relied on the lucky M1.5 seed-0 deal containing a SUBJECT card started failing.
+
+All three issues were post-merge regressions on `main`. Each required an orchestrator-authored RUL-23 fix-forward commit:
+- `RUL-23: pin revealed_effect on test_effects_nouns helpers` (15 failures → 0)
+- `RUL-23: pin revealed_effect on test_goals enter_resolve helpers` (2 failures → 0)
+- `RUL-23: make _drive_to_first_build seed-independent` (14 failures → 0)
+- `RUL-23: inject SUBJECT for direct start_game test` (1 failure → 0)
+
+Then G and H each needed in-PR test-helper amendments to add the `revealed_effect` pin to their own test fixtures. Total: 4 RUL-23 commits + 2 worker amendments to recover from a cascade kicked off when I merged on CLEAN-but-broken state.
+
+## Root cause
+
+Two reinforcing factors. (1) **Orchestrator's spot-check rule (`workflows/pr-merge.md` step 1.5) verifies the PR's own DoD against its own diff. It doesn't verify the PR's tests still pass against post-merge `main`.** GitHub's `mergeable: CLEAN` only attests to merge-mechanics; it has no test-running CI in this repo. The orchestrator never ran the PR's tests in a rebased-against-main state before merging. (2) **D's substrate change was substantive** — `revealed_effect` becomes a required field for any test that asserts post-resolve VP changes — but the substrate-watchpoint guidance in `PROJECT_CONTEXT.md` covers state.py changes only. Behavioural substrate (a function's contract) has no equivalent watchpoint, so workers and orchestrator both missed that D's contract change rippled into every other Phase 3 PR.
+
+Separately, the `_drive_to_first_build` fragility was pre-existing (the helper relied on lucky seed-0 deals containing a SUBJECT) but didn't manifest until Phase 3's deck extensions arrived. RUL-31 dodged it because it held the deck identical (and was the lesson that taught us "Phase 3 owns deck extension"); RUL-34 hardened the M1.5 watchable smoke against the same fragility but didn't generalise the fix to `_drive_to_first_build`.
+
+## Fix in project
+
+- Memory rule (existing): "spot-check one DoD bullet against the diff before merging" tightened in practice to also include "rebase against post-merge main and run the affected test files before merging" when a previously-merged PR in the same fan touched a contract every other PR consumes.
+- Cross-cutting helper fix in `_drive_to_first_build` (84ecde9) makes the test-suite seed-independent. Future deck-extending tickets won't trip this.
+- The four RUL-23 commits document the recovery; cumulative cost was ~30 minutes of orchestrator time but should never have happened.
+
+## Proposed template change
+
+`workflows/pr-merge.md` step 1.5 should grow a sub-bullet: "If the PR is part of a parallel fan where a sibling has already landed a contract change (signature, behavioural substrate, required-field addition), rebase the PR's branch against post-merge main and run the affected test files before squash-merging. CLEAN merge mechanics are not sufficient evidence that the rebased state is green."
+
+Substrate-watchpoint section in `PROJECT_CONTEXT.md` could grow a behavioural-substrate clause: "When a PR changes the contract of a public function (signature, required-field consumption, exception class), every test that constructs a `GameState` (or equivalent fixture) for the affected code path is implicitly impacted. List the contract change in the PR description and propose a helper-pin pattern for downstream test fixtures." The orchestrator dispatching parallel siblings should bake the helper-pin into all dependent tickets' hand-overs.
+
+Worth promoting to global `CLAUDE.md`: "Behavioural substrate" alongside "code substrate" — both deserve watchpoints. CLEAN merge mechanics is necessary but not sufficient when a parallel fan shares behavioural substrate.
