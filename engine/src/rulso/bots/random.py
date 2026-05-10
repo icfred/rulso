@@ -39,6 +39,14 @@ _FROZEN = ConfigDict(frozen=True)
 # 0.85 keeps the bot mostly constructive while preserving exploration.
 PLAY_BIAS = 0.85
 
+# RUL-42 (G): OP-only comparator MODIFIERs per ADR-0002. The bot picks 2d6 by
+# default for these (wider range = more strategic neutral) without offering a
+# 1d6 alternative. M1.5 baked-N comparators (``LT:5``, etc.) and other
+# MODIFIER-shaped cards continue to enumerate both dice modes via the legacy
+# branch below — additive, not a replacement.
+_OP_ONLY_COMPARATOR_NAMES: frozenset[str] = frozenset({"LT", "LE", "GT", "GE", "EQ"})
+_OP_ONLY_DEFAULT_DICE: Literal[1, 2] = 2
+
 
 class PlayCard(BaseModel):
     """Play one card from hand into one open slot.
@@ -124,6 +132,14 @@ def _enumerate_plays(state: GameState, player: Player) -> list[PlayCard]:
             if muted and card.type is CardType.MODIFIER:
                 continue
             if card.type is CardType.MODIFIER:
+                # RUL-42 (G): OP-only comparator (ADR-0002) → bot defaults to
+                # 2d6; do not enumerate 1d6. Additive branch — falls through to
+                # the legacy both-modes path for every other MODIFIER.
+                if card.name in _OP_ONLY_COMPARATOR_NAMES:
+                    plays.append(
+                        PlayCard(card_id=card.id, slot=slot.name, dice=_OP_ONLY_DEFAULT_DICE)
+                    )
+                    continue
                 # Treat every MODIFIER as a comparator: offer both dice options.
                 plays.append(PlayCard(card_id=card.id, slot=slot.name, dice=1))
                 plays.append(PlayCard(card_id=card.id, slot=slot.name, dice=2))
