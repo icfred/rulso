@@ -338,6 +338,13 @@ register_effect_kind("LOSE_VP", _lose_vp)
 register_effect_kind("DRAW", _draw)
 register_effect_kind("NOOP", _noop)
 
+# RUL-40: import status for its side-effect — :mod:`rulso.status` registers
+# APPLY_BURN / CLEAR_BURN / APPLY_MUTE / APPLY_BLESSED / APPLY_MARKED /
+# APPLY_CHAINED / CLEAR_CHAINED handlers against the registry above. Placed
+# at module-bottom so ``register_effect_kind`` is fully defined when
+# ``status.py`` runs its registration block (avoids the partial-import
+# bootstrap problem).
+from rulso import status as _status  # noqa: E402, F401
 
 # --- Internals --------------------------------------------------------------
 

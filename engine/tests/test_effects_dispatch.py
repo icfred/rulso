@@ -279,20 +279,16 @@ def test_target_mod_dealer_only_overrides_match_set() -> None:
     assert out.players[1].vp == 1
 
 
-# --- Status / clear stubs (RUL-40) -------------------------------------------
+# --- Status / clear unregistered kinds --------------------------------------
+# RUL-40 registered handlers for the M2 starter status kinds (APPLY_BURN,
+# CLEAR_BURN, APPLY_MUTE, APPLY_BLESSED, APPLY_MARKED, APPLY_CHAINED,
+# CLEAR_CHAINED) — those are exercised in test_status.py. The kinds without
+# starter cards (per design/status-tokens.md "M2 starter subset") still hit
+# the dispatcher's pending-stub raise below.
 
 
-@pytest.mark.parametrize(
-    "name",
-    [
-        "APPLY_BURN:1",
-        "APPLY_MUTE",
-        "APPLY_BLESSED@EXCEPT_MATCHED",
-        "APPLY_CHAINED",
-        "CLEAR_BURN:1",
-    ],
-)
-def test_status_kinds_raise_not_implemented_until_phase_3_e(name: str) -> None:
+@pytest.mark.parametrize("name", ["CLEAR_MUTE", "CLEAR_BLESSED", "CLEAR_MARKED"])
+def test_unregistered_status_clear_kinds_raise(name: str) -> None:
     state = _state(_player("p0"), revealed=_effect(name))
     with pytest.raises(NotImplementedError, match="M2 Phase 3 E"):
         dispatch_effect(state, state.revealed_effect, frozenset({"p0"}))
