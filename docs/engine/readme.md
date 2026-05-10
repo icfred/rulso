@@ -1,4 +1,4 @@
-_Last edited: 2026-05-10 by RUL-23 (sweep batching Phase 3 fan + Wave 1: RUL-39..46, RUL-47, RUL-48, RUL-50)_
+_Last edited: 2026-05-10 by RUL-23 (sweep batching Wave 2: RUL-49 BLESSED chip-loss, RUL-52 CLI human-seat)_
 
 # engine
 
@@ -19,12 +19,13 @@ Python 3.12 package. `uv` managed. Pydantic v2 state, asyncio + `websockets` ser
 | `engine/src/rulso/cards.py` | live | yaml loader + deck builder. Covers M1.5 + M2 vocabulary (CardType.EFFECT, GoalCard, scope_mode); reads `design/cards.yaml` |
 | `engine/src/rulso/legality.py` | live | small helpers for legal-action selection (M1.5: `first_card_of_type`) — see [legality.md](legality.md) |
 | `engine/src/rulso/persistence.py` | live | WHEN/WHILE rule lifecycle (RUL-32) wired through the Phase 3 effect dispatcher. JOKER PERSIST_WHEN/WHILE/ECHO promote rules via `add_persistent_rule` (RUL-45 J). See [persistence.md](persistence.md) |
-| `engine/src/rulso/status.py` | live | per-token apply/clear/decay matrix (BURN / MUTE / BLESSED / MARKED / CHAINED) per RUL-30 spike; round-start tick replaces M1.5 `_apply_burn_tick` (RUL-40 E). `consume_blessed_or_else` primitive ready; chip-loss call-site flip pending RUL-49 — see [status.md](status.md) |
+| `engine/src/rulso/status.py` | live | per-token apply/clear/decay matrix (BURN / MUTE / BLESSED / MARKED / CHAINED) per RUL-30 spike; round-start tick replaces M1.5 `_apply_burn_tick` (RUL-40 E). `consume_blessed_or_else` wired into `effects._lose_chips` and the BURN tick (RUL-49); zero-magnitude losses do not consume BLESSED — see [status.md](status.md) |
 | `engine/src/rulso/goals.py` | live | goal-claim engine (RUL-46 K): predicate registry, per-round claim + replenish for `single`, persist for `renewable`; ADR-0005 retypes `goal_deck` / `goal_discard` / `active_goals` to `GoalCard` |
 | `engine/src/rulso/server.py` | stub | websocket entry point |
 | `engine/src/rulso/protocol.py` | stub | engine↔client message types |
 | `engine/src/rulso/bots/__init__.py` | stub | bots package |
-| `engine/src/rulso/bots/random.py` | live | random-legal-play bot — see [bots.md](bots.md) |
+| `engine/src/rulso/bots/random.py` | live | random-legal-play bot + public `enumerate_legal_actions` helper (RUL-52) — see [bots.md](bots.md) |
+| `engine/src/rulso/bots/human.py` | live | TTY action driver for `--human-seat` (RUL-52); EOF→Pass; reuses `bots.random.enumerate_legal_actions` for the menu |
 | `engine/tests/test_smoke.py` | live | asserts `import rulso` works |
 | `engine/tests/test_state_models.py` | live | construction, frozen rejection, JSON round-trip |
 | `engine/tests/test_round_flow.py` | live | round-flow phase transitions, dealer rotation, burn tick |
@@ -46,6 +47,7 @@ Python 3.12 package. `uv` managed. Pydantic v2 state, asyncio + `websockets` ser
 | `engine/tests/test_status.py` | live | status apply/decay (RUL-40 E): per-token matrix, round-start BURN tick, MUTE clear, `consume_blessed_or_else` primitive — see [status.md](status.md) |
 | `engine/tests/test_goals.py` | live | goal-claim engine (RUL-46 K): predicate registry, single-claim discard + replenish, renewable persist |
 | `engine/tests/test_jokers.py` | live | JOKER attachment (RUL-45 J): PERSIST_WHEN/WHILE promote, ECHO conditional one-shot WHEN, DOUBLE effect doubling |
+| `engine/tests/test_cli_human_seat.py` | live | CLI human-seat driver (RUL-52): valid-pick happy path, invalid/out-of-range loop, EOF→Pass fallback, all 4 seats parametrised, out-of-range CLI flag rejection |
 
 ## Commands
 
