@@ -22,6 +22,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from rulso.effects import is_operator_modifier
 from rulso.state import (
     DISCARD_COST,
     CardType,
@@ -132,15 +133,23 @@ def _enumerate_plays(state: GameState, player: Player) -> list[PlayCard]:
             if muted and card.type is CardType.MODIFIER:
                 continue
             if card.type is CardType.MODIFIER:
+                # RUL-43: operator MODIFIERs (BUT/AND/OR/MORE_THAN/AT_LEAST)
+                # share CardType.MODIFIER with comparators but attach to a
+                # filled slot's ``modifiers`` tuple, not ``filled_by``. The
+                # dedicated "play_operator" action shape lands when ADR-0004's
+                # legality extension does — until then the bot leaves them in
+                # hand rather than crash ``_parse_quant`` on QUANT.
+                if is_operator_modifier(card):
+                    continue
                 # RUL-42 (G): OP-only comparator (ADR-0002) → bot defaults to
                 # 2d6; do not enumerate 1d6. Additive branch — falls through to
-                # the legacy both-modes path for every other MODIFIER.
+                # the legacy both-modes path for every other comparator MODIFIER.
                 if card.name in _OP_ONLY_COMPARATOR_NAMES:
                     plays.append(
                         PlayCard(card_id=card.id, slot=slot.name, dice=_OP_ONLY_DEFAULT_DICE)
                     )
                     continue
-                # Treat every MODIFIER as a comparator: offer both dice options.
+                # Treat comparator MODIFIERs uniformly: offer both dice options.
                 plays.append(PlayCard(card_id=card.id, slot=slot.name, dice=1))
                 plays.append(PlayCard(card_id=card.id, slot=slot.name, dice=2))
             else:
