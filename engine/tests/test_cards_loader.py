@@ -52,9 +52,16 @@ def test_load_cards_count_matches_inventory_subset() -> None:
     assert len(by_type[CardType.JOKER]) == 0
 
 
-def test_subject_names_match_handover_spec() -> None:
+def test_subject_names_match_engine_substrate() -> None:
+    """SUBJECT card names must match what the engine actually scopes against.
+
+    Literal seats: ``Player.id`` from ``rules.start_game`` (``p0..p3``).
+    Labels: keys in ``labels.LABEL_NAMES`` (``"THE LEADER"`` / ``"THE WOUNDED"``)
+    per ADR-0001. RUL-18 reconciled this in cards.yaml so ``effects._scope_subject``
+    matches without translation.
+    """
     subjects = {c.name for c in load_cards() if c.type is CardType.SUBJECT}
-    assert subjects == {"seat_0", "seat_1", "seat_2", "seat_3", "LEADER", "WOUNDED"}
+    assert subjects == {"p0", "p1", "p2", "p3", "THE LEADER", "THE WOUNDED"}
 
 
 def test_noun_names_match_resolver_vocabulary() -> None:
@@ -123,7 +130,7 @@ def test_default_main_deck_multiplies_copies() -> None:
         counts[c.id] = counts.get(c.id, 0) + 1
     # Sanity: 6 SUBJECT × 3 + 2 NOUN × 4 + 12 MODIFIER × 2 = 18 + 8 + 24 = 50.
     assert sum(counts.values()) == 50
-    assert counts["subj.seat_0"] == 3
+    assert counts["subj.p0"] == 3
     assert counts["noun.chips"] == 4
     assert counts["mod.cmp.eq.5"] == 2
 

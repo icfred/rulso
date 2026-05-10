@@ -41,6 +41,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 def run_game(*, seed: int, max_rounds: int, out: TextIO) -> int:
     """Play one game; emit per-event lines to ``out``. Return 0 on win, 1 on cap-hit."""
     rng = random.Random(seed)
+    refill_rng = random.Random(seed ^ 0x5EED)  # disjoint stream from bot decisions
     state = _start_game(seed)
     _emit(out, "game_start", seed=seed, max_rounds=max_rounds, players=PLAYER_COUNT)
 
@@ -52,7 +53,13 @@ def run_game(*, seed: int, max_rounds: int, out: TextIO) -> int:
                 _emit(out, "cap_hit", rounds_started=rounds_started, winner="none")
                 return 1
             rounds_started += 1
-            state = advance_phase(state)  # ROUND_START → BUILD
+            prior_dealer = state.dealer_seat
+            state = advance_phase(
+                state
+            )  # ROUND_START → BUILD or back to ROUND_START on dealer-no-seed
+            if state.phase is Phase.ROUND_START:
+                _narrate_dealer_seed_failure(out, state, prior_dealer)
+                continue
             _narrate_round_start(out, state)
         elif state.phase is Phase.BUILD:
             prior_rule = state.active_rule
@@ -62,7 +69,7 @@ def run_game(*, seed: int, max_rounds: int, out: TextIO) -> int:
                 _narrate_rule_failed(out, prior_rule, state)
         elif state.phase is Phase.RESOLVE:
             _narrate_resolve(out, state)
-            state = advance_phase(state)  # RESOLVE → ROUND_START or END
+            state = advance_phase(state, rng=refill_rng)  # RESOLVE → ROUND_START or END
         else:
             _emit(out, "unhandled_phase", phase=state.phase.value)
             return 1
@@ -119,8 +126,8 @@ def _drive_build_turn(state: GameState, rng: random.Random, out: TextIO) -> Game
         return play_card(state, card, action.slot)
     if isinstance(action, DiscardRedraw):
         # Discard isn't wired into rules.py yet; treat as a pass and flag.
-        # M1 hands are empty so this branch is unreachable in practice; kept
-        # for forward-compat once hands are populated.
+        # Reachable post-RUL-18 when a player's hand has no slot-compatible
+        # card; full discard wiring lands later.
         _emit(
             out,
             "turn",
@@ -176,6 +183,32 @@ def _narrate_round_start(out: TextIO, state: GameState) -> None:
             )
 
 
+def _narrate_dealer_seed_failure(out: TextIO, state: GameState, prior_dealer: int) -> None:
+    """Emit round_start + rule_failed events when the dealer cannot seed slot 0.
+
+    enter_round_start consumes the round (round_number ticks, dealer rotates)
+    but never enters BUILD. Mirrors the build-time path so log-grepping sees
+    one ``round_start`` and one ``rule_failed`` per consumed round regardless
+    of fail mode.
+    """
+    _emit(
+        out,
+        "round_start",
+        round=state.round_number,
+        dealer=prior_dealer,
+        template="unknown",
+        effect_card="none",
+    )
+    _emit(
+        out,
+        "rule_failed",
+        round=state.round_number,
+        reason="dealer_no_seed_card",
+        next_dealer=state.dealer_seat,
+    )
+    _emit_standings(out, state)
+
+
 def _narrate_rule_failed(out: TextIO, prior_rule: RuleBuilder | None, state: GameState) -> None:
     """Emit a rule_failed event with the slots that ended up unfilled.
 
@@ -225,10 +258,8 @@ def _narrate_resolve(out: TextIO, state: GameState) -> None:
 def _render_rule_text(rule: RuleBuilder) -> str:
     """Cheap structural rendering — joins slot card names in slot order.
 
-    Real grammar (``grammar.render_if_rule``) requires SUBJECT/QUANT/NOUN slot
-    names, but the M1 stub rule in rules.py uses subject/noun/modifier/noun_2.
-    Until that mismatch is reconciled, the CLI prints whatever's filled — the
-    rule won't actually fire in M1 anyway (empty hands → all passes → fail).
+    Slot defs come from the CONDITION card (RUL-18); for an IF rule that's
+    SUBJECT / QUANT / NOUN, which matches ``grammar.render_if_rule``.
     """
     parts: list[str] = [rule.template.value]
     for slot in rule.slots:

@@ -1,18 +1,38 @@
 """Round-flow phase machine.
 
 Pure-function transitions over ``GameState``. Implements the round flow defined
-in ``design/state.md`` for the M1 milestone. Shop, persistent-rule WHILE tick,
-joker attachment and effect application are stubbed — see
-``docs/engine/round-flow.md``.
+in ``design/state.md``. Shop, persistent-rule WHILE tick, joker attachment and
+real effect-card application are stubbed — see ``docs/engine/round-flow.md``.
 
 All functions return a new ``GameState``; the input state is never mutated.
+
+RNG contract (RUL-18):
+
+* ``start_game(seed)`` performs the initial deck shuffle and 4×HAND_SIZE deal
+  using ``random.Random(seed)``. The rng is consumed and discarded — same seed
+  in, same opening state out.
+* ``enter_resolve(state, *, rng=None)`` shuffles ``state.discard`` back into
+  ``state.deck`` when refilling depletes the deck. Pass an explicit
+  ``random.Random(...)`` for deterministic mid-game refills (cli.py does).
+  ``rng=None`` falls back to a fresh non-deterministic ``random.Random()``.
+* ``advance_phase(state, *, rng=None)`` forwards ``rng`` to ``enter_resolve``;
+  other phase boundaries don't shuffle.
+
+The seed is intentionally NOT carried on ``GameState`` (substrate is
+additive-only and frozen; threading the RNG through public entry points keeps
+``GameState`` purely declarative).
 """
 
 from __future__ import annotations
 
-from rulso import labels
+import random
+
+from rulso import cards as cards_module
+from rulso import effects, labels, legality
+from rulso.cards import ConditionTemplate
 from rulso.state import (
     BURN_TICK,
+    HAND_SIZE,
     PLAYER_COUNT,
     VP_TO_WIN,
     Card,
@@ -26,22 +46,10 @@ from rulso.state import (
     Slot,
 )
 
-# --- M1 stub rule shape -----------------------------------------------------
-# Real card content lands with cards.yaml; until then the round flow uses a
-# fixed 4-slot template. Slot 0 is filled by the dealer in round_start; slots
-# 1-3 are filled during build by the other three players. The dealer's own
-# build turn (the 4th tick) is therefore a no-op pass under the M1 stub.
-_M1_RULE_SLOT_DEFS: tuple[tuple[str, CardType], ...] = (
-    ("subject", CardType.SUBJECT),
-    ("noun", CardType.NOUN),
-    ("modifier", CardType.MODIFIER),
-    ("noun_2", CardType.NOUN),
-)
-_M1_DEALER_FRAGMENT: Card = Card(
-    id="m1_stub_dealer_subject",
-    type=CardType.SUBJECT,
-    name="ANYONE",
-)
+# --- M1 stubs that survive RUL-18 -------------------------------------------
+# Real effect-card resolution lands with the effect-card catalogue (M2). Until
+# then the round still reveals a placeholder so ``revealed_effect`` is non-None
+# during BUILD/RESOLVE — narration code reads it.
 _M1_EFFECT_CARD: Card = Card(
     id="m1_stub_effect",
     type=CardType.MODIFIER,
@@ -53,29 +61,45 @@ _M1_EFFECT_CARD: Card = Card(
 
 
 def start_game(seed: int = 0) -> GameState:
-    """Initialize a fresh 4-player game.
+    """Initialize a fresh 4-player game with shuffled deck and dealt hands.
+
+    Builds the main deck via :func:`cards.build_default_deck`, shuffles it with
+    ``random.Random(seed)``, deals ``HAND_SIZE`` cards to each of the
+    ``PLAYER_COUNT`` players, and parks the remainder in ``state.deck``.
 
     Returns a state at ``phase=ROUND_START`` with ``round_number=0`` and
-    ``dealer_seat=0``. Hands and decks are empty (M1 stub: deck and card
-    distribution land in a later ticket). ``seed`` is accepted for API stability
-    but unused in M1 because there is no shuffling yet.
+    ``dealer_seat=0``. Same ``seed`` ⇒ same opening hands (RUL-18 determinism
+    contract).
     """
-    del seed  # M1: nothing to shuffle yet.
-    players = tuple(Player(id=f"p{i}", seat=i) for i in range(PLAYER_COUNT))
+    rng = random.Random(seed)
+    decks = cards_module.build_default_deck()
+    deck_list = list(decks.main)
+    rng.shuffle(deck_list)
+
+    cursor = 0
+    players: list[Player] = []
+    for i in range(PLAYER_COUNT):
+        hand = tuple(deck_list[cursor : cursor + HAND_SIZE])
+        cursor += HAND_SIZE
+        players.append(Player(id=f"p{i}", seat=i, hand=hand))
+    remaining_deck = tuple(deck_list[cursor:])
+
     return GameState(
         phase=Phase.ROUND_START,
         round_number=0,
         dealer_seat=0,
         active_seat=0,
-        players=players,
+        players=tuple(players),
+        deck=remaining_deck,
     )
 
 
-def advance_phase(state: GameState) -> GameState:
+def advance_phase(state: GameState, *, rng: random.Random | None = None) -> GameState:
     """Advance one logical step based on the current phase.
 
     ``BUILD`` ticks model a forced-pass turn (no card played). To play a card
-    during build, call :func:`play_card` directly.
+    during build, call :func:`play_card` directly. ``rng`` is forwarded to
+    :func:`enter_resolve` for the deck-refill shuffle.
     """
     phase = state.phase
     if phase is Phase.LOBBY:
@@ -85,7 +109,7 @@ def advance_phase(state: GameState) -> GameState:
     if phase is Phase.BUILD:
         return _build_tick(state)
     if phase is Phase.RESOLVE:
-        return enter_resolve(state)
+        return enter_resolve(state, rng=rng)
     if phase is Phase.SHOP:
         raise NotImplementedError("M2: shop phase")
     if phase is Phase.END:
@@ -96,44 +120,61 @@ def advance_phase(state: GameState) -> GameState:
 def enter_round_start(state: GameState) -> GameState:
     """Run round_start steps 1-8 from ``design/state.md`` atomically.
 
-    Ends in ``phase=BUILD`` with the dealer's first slot pre-filled.
+    Ends in ``phase=BUILD`` with the dealer's first slot pre-filled — unless
+    the dealer holds no card matching slot 0's type, in which case the rule
+    fails immediately and the dealer rotates (rule never enters BUILD).
     """
     new_round = state.round_number + 1
     # Step 2: BURN tick + MUTE expiry.
     players = tuple(_apply_burn_tick(p) for p in state.players)
     # Step 3: recompute floating labels (ADR-0001 — computed-not-stored).
-    # M1 consumers: none directly here (no WHILE rules yet, and the M1
-    # resolver isn't wired into enter_resolve). The recompute is preserved
-    # as the canonical design step 3 hook. The resolver itself takes labels
-    # as a transient parameter via effects.resolve_if_rule(state, rule,
-    # labels=...); see docs/engine/labels.md.
+    # The recompute is preserved as the canonical design step 3 hook; the
+    # resolver receives labels as a transient parameter from enter_resolve.
     labels.recompute_labels(state.model_copy(update={"players": players}))
     # Step 4: WHILE-rule tick — M1 has no persistent rules; guard the path.
     if state.persistent_rules:
         raise NotImplementedError("M2: persistent rule WHILE tick")
     # Step 5: shop check — bypassed in M1. See docs/engine/round-flow.md.
-    # Step 6: reveal effect card.
+    # Step 6: reveal effect card. Real effect-deck draw lands with M2; the
+    # stub keeps revealed_effect non-None during BUILD/RESOLVE.
     revealed_effect = _M1_EFFECT_CARD
     # Step 7: dealer plays the condition template + slot 0.
+    condition = _draw_condition_template()
+    slots = tuple(Slot(name=cs.name, type=cs.type) for cs in condition.slots)
+    if not slots:
+        raise ValueError(f"condition template {condition.id!r} has no slots")
     dealer = players[state.dealer_seat]
-    slots = tuple(
-        Slot(
-            name=name,
-            type=type_,
-            filled_by=_M1_DEALER_FRAGMENT if i == 0 else None,
+    first_slot = slots[0]
+    chosen = legality.first_card_of_type(dealer.hand, first_slot.type)
+    if chosen is None:
+        # No legal seed-card in the dealer's hand → rule fails immediately.
+        # Round is consumed (round_number ticked) and dealer rotates.
+        new_dealer_seat = (state.dealer_seat + 1) % PLAYER_COUNT
+        return state.model_copy(
+            update={
+                "round_number": new_round,
+                "players": players,
+                "phase": Phase.ROUND_START,
+                "active_rule": None,
+                "dealer_seat": new_dealer_seat,
+                "build_turns_taken": 0,
+                "revealed_effect": None,
+            }
         )
-        for i, (name, type_) in enumerate(_M1_RULE_SLOT_DEFS)
-    )
-    first_play = Play(
-        player_id=dealer.id,
-        card=_M1_DEALER_FRAGMENT,
-        slot=slots[0].name,
-    )
+
+    new_dealer_hand = _remove_first(dealer.hand, chosen)
+    new_dealer = dealer.model_copy(update={"hand": new_dealer_hand})
+    players = players[: state.dealer_seat] + (new_dealer,) + players[state.dealer_seat + 1 :]
+
+    filled_first = first_slot.model_copy(update={"filled_by": chosen})
+    final_slots = (filled_first,) + slots[1:]
+    first_play = Play(player_id=dealer.id, card=chosen, slot=first_slot.name)
     active_rule = RuleBuilder(
-        template=RuleKind.IF,
-        slots=slots,
+        template=condition.kind,
+        slots=final_slots,
         plays=(first_play,),
     )
+
     primed = state.model_copy(
         update={
             "round_number": new_round,
@@ -159,17 +200,29 @@ def enter_build(state: GameState) -> GameState:
     )
 
 
-def enter_resolve(state: GameState) -> GameState:
-    """Run resolve steps 1-13 atomically. Ends in ROUND_START or END."""
+def enter_resolve(state: GameState, *, rng: random.Random | None = None) -> GameState:
+    """Run resolve steps 1-13 atomically. Ends in ROUND_START or END.
+
+    ``rng`` is consumed by the deck-refill shuffle (step 12) when ``state.deck``
+    runs short. Pass ``random.Random(seed)`` for deterministic refills; ``None``
+    falls back to a fresh non-deterministic ``random.Random()``.
+    """
     if state.phase is not Phase.RESOLVE:
         raise ValueError(f"enter_resolve requires phase=RESOLVE, got {state.phase}")
     if state.active_rule is None:
         raise ValueError("enter_resolve called with no active_rule")
     if state.active_rule.joker_attached is not None:
         raise NotImplementedError("M2: joker attachment")
-    # Steps 1-7 (render, scope, evaluate, apply effects, joker, persistent
-    # trigger, goal claim) are M1 stubs — no state changes.
-    # Step 8: label recompute — labels.py stub.
+    # Steps 1-4: render + scope + evaluate + apply effects via the resolver.
+    # ADR-0001 labels are computed-not-stored, so the resolver recomputes
+    # them from ``state`` when called without an explicit labels mapping.
+    # IF-only in M1.5; WHEN/WHILE land with persistent rules (M2) so we
+    # guard the call here to keep the path future-safe.
+    if state.active_rule.template is RuleKind.IF:
+        state = effects.resolve_if_rule(state, state.active_rule)
+    # Steps 5-7: joker, persistent trigger, goal claim — M2 stubs (joker
+    # already guarded above; the rest are no-ops in M1.5).
+    # Step 8: label recompute — implicit (computed-not-stored).
     # Step 9: win check.
     winner = _check_winner(state.players)
     if winner is not None:
@@ -184,13 +237,19 @@ def enter_resolve(state: GameState) -> GameState:
     discarded = tuple(s.filled_by for s in state.active_rule.slots if s.filled_by is not None)
     # Step 11: rotate dealer.
     new_dealer = (state.dealer_seat + 1) % PLAYER_COUNT
-    # Step 12: refill hands — M1 stub no-op (no deck).
+    # Step 12: refill hands.
+    refill_rng = rng if rng is not None else random.Random()
+    state_post_discard = state.model_copy(
+        update={
+            "discard": state.discard + discarded,
+        }
+    )
+    refilled = _refill_hands(state_post_discard, refill_rng)
     # Step 13: transition to ROUND_START.
-    return state.model_copy(
+    return refilled.model_copy(
         update={
             "phase": Phase.ROUND_START,
             "active_rule": None,
-            "discard": state.discard + discarded,
             "dealer_seat": new_dealer,
             "build_turns_taken": 0,
             "revealed_effect": None,
@@ -202,7 +261,8 @@ def play_card(state: GameState, card: Card, slot_name: str) -> GameState:
     """Active player plays ``card`` into ``slot_name``; advances the build turn.
 
     Validates phase=BUILD, slot exists, slot is unfilled, card type matches
-    slot type. Hand membership is not checked in M1 (hands are empty stubs).
+    slot type. Removes ``card`` from the active player's hand by id+identity
+    (the first matching instance, in case of duplicates).
     """
     if state.phase is not Phase.BUILD:
         raise ValueError(f"play_card requires phase=BUILD, got {state.phase}")
@@ -224,15 +284,27 @@ def play_card(state: GameState, card: Card, slot_name: str) -> GameState:
 
     new_slot = target.model_copy(update={"filled_by": card})
     new_slots = rule.slots[:target_idx] + (new_slot,) + rule.slots[target_idx + 1 :]
-    active_player_id = state.players[state.active_seat].id
-    new_play = Play(player_id=active_player_id, card=card, slot=slot_name)
+    active_player = state.players[state.active_seat]
+    new_play = Play(player_id=active_player.id, card=card, slot=slot_name)
     new_rule = rule.model_copy(
         update={
             "slots": new_slots,
             "plays": rule.plays + (new_play,),
         }
     )
-    return _build_tick(state.model_copy(update={"active_rule": new_rule}))
+    new_hand = _remove_first(active_player.hand, card)
+    new_player = active_player.model_copy(update={"hand": new_hand})
+    new_players = (
+        state.players[: state.active_seat] + (new_player,) + state.players[state.active_seat + 1 :]
+    )
+    return _build_tick(
+        state.model_copy(
+            update={
+                "active_rule": new_rule,
+                "players": new_players,
+            }
+        )
+    )
 
 
 def pass_turn(state: GameState) -> GameState:
@@ -243,6 +315,65 @@ def pass_turn(state: GameState) -> GameState:
 
 
 # --- Internals --------------------------------------------------------------
+
+
+def _draw_condition_template() -> ConditionTemplate:
+    """Return one CONDITION template per round.
+
+    M1.5 ships a single condition (``cond.if``); the deck has one card. When
+    multiple conditions land, this draws the first deterministically — RUL-21
+    or later can promote it to an rng-shuffled condition deck. Loading per
+    round is cheap (yaml is small); avoids a new ``GameState`` field for the
+    condition deck while substrate stays additive-only.
+    """
+    templates = cards_module.load_condition_templates()
+    if not templates:
+        raise RuntimeError("cards.yaml exposes no condition templates")
+    return templates[0]
+
+
+def _refill_hands(state: GameState, rng: random.Random) -> GameState:
+    """Step 12: refill each player's hand to ``HAND_SIZE``.
+
+    When ``state.deck`` empties mid-refill, shuffles ``state.discard`` back into
+    the deck via ``rng`` and continues. If both deck and discard are empty,
+    stops drawing for that player (hand stays under ``HAND_SIZE`` until cards
+    return to the discard pile next round).
+    """
+    deck = list(state.deck)
+    discard = list(state.discard)
+    new_players: list[Player] = []
+    for player in state.players:
+        needed = HAND_SIZE - len(player.hand)
+        drawn: list[Card] = []
+        while needed > 0:
+            if not deck:
+                if not discard:
+                    break
+                deck = discard
+                rng.shuffle(deck)
+                discard = []
+            drawn.append(deck.pop())
+            needed -= 1
+        if drawn:
+            new_players.append(player.model_copy(update={"hand": player.hand + tuple(drawn)}))
+        else:
+            new_players.append(player)
+    return state.model_copy(
+        update={
+            "players": tuple(new_players),
+            "deck": tuple(deck),
+            "discard": tuple(discard),
+        }
+    )
+
+
+def _remove_first(hand: tuple[Card, ...], card: Card) -> tuple[Card, ...]:
+    """Remove the first occurrence of ``card`` (by identity, then id) from ``hand``."""
+    for i, c in enumerate(hand):
+        if c is card or c.id == card.id:
+            return hand[:i] + hand[i + 1 :]
+    raise ValueError(f"card {card.id!r} not in hand")
 
 
 def _build_tick(state: GameState) -> GameState:
