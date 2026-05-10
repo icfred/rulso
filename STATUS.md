@@ -1,4 +1,4 @@
-_Last updated: 2026-05-10 by orchestrator session — Phase 3 fan: 7 of 8 merged (D, E, G, H, I, K + RUL-23 fixes); F blocked on ADR-0003; J still in flight_
+_Last updated: 2026-05-10 by orchestrator session — **Phase 3 COMPLETE** (8/8 merged: D, E, F, G, H, I, J, K); RUL-35 (M2 watchable smoke) unblocked_
 
 # Rulso — orchestrator bootstrap
 
@@ -12,23 +12,25 @@ Linear board: https://linear.app/rulso (team `RUL`, projects: Engine / Infra / B
 |---|---|---|---|
 | RUL-5 | M1: Engine core | 4-bot CLI game runs end-to-end, IF rules resolve, state machine sound | **Done** |
 | RUL-15 | M1.5: Watchable engine | First moment the game is *real* | **Done** (closed 2026-05-10) |
-| RUL-24 | M2: Full card set | Every card type and mechanic from cards.yaml works | Phase 1 + Phase 2 shipped; Phase 3 fan ready to shape |
+| RUL-24 | M2: Full card set | Every card type and mechanic from cards.yaml works | Phase 1 + Phase 2 + **Phase 3 fan SHIPPED**; RUL-35 (M2 smoke) is the tail |
 | RUL-23 | Meta — orchestrator-authored cross-cutting commits | Permanent home for orchestrator commits | Permanent In Progress |
 
 ## In flight
 
-**Phase 3 fan merge sweep 2026-05-10** — 6 of 8 merged. Main fully green, 320 tests passing. Deck total: 50 → 82 (F still pending; final after F = 88). State summary:
+**Nothing in flight.** Phase 3 fan is fully shipped (8/8 merged). Main: **398 tests passing**, ruff clean. Deck total: 50 → 96 (final). Next: dispatch RUL-35 (M2 watchable smoke — the Phase 3 tail).
 
-| ID | Letter | PR | State | Notes |
-|---|---|---|---|---|
-| RUL-39 | D | #37 | **Merged** | Dispatcher + registry hook on main |
-| RUL-40 | E | #40 | **Merged** | status.py + 7 effect-kind registrations (5 DoD + APPLY_MARKED + CLEAR_CHAINED extras); BLESSED chip-loss wiring deferred to RUL-49 |
-| RUL-41 | F | #35 | **Blocked** — ADR-0003 fix requested | Worker correctly flagged; PR comment posted asking subset (not first-match) semantics |
-| RUL-42 | G | #38 | **Merged** | Comparator dice (ADR-0002) |
-| RUL-43 | H | #36 | **Merged** | Operator MODIFIER fold (ADR-0004) |
-| RUL-44 | I | #34 | **Merged** | Polymorphic NOUN reads |
-| RUL-45 | J | — | In flight | No hand-back yet |
-| RUL-46 | K | #39 | **Merged** | Goal-claim engine; ADR-0005 ratifies retype |
+### Phase 3 fan — final state (2026-05-10)
+
+| ID | Letter | PR | Notes |
+|---|---|---|---|
+| RUL-39 | D | #37 | Effect dispatcher + `register_effect_kind` registry hook |
+| RUL-40 | E | #40 | `status.py` + 7 effect-kind registrations (5 DoD + APPLY_MARKED + CLEAR_CHAINED); BLESSED chip-loss wiring deferred to RUL-49 |
+| RUL-41 | F | #35 | ANYONE / EACH_PLAYER scoping per ADR-0003 (existential = subset-fire-once, iterative = per-player loop). Reworked once after first PR diverged from ADR. |
+| RUL-42 | G | #38 | Comparator dice (ADR-0002) |
+| RUL-43 | H | #36 | Operator MODIFIER fold (ADR-0004) |
+| RUL-44 | I | #34 | Polymorphic NOUN reads |
+| RUL-45 | J | #41 | JOKER attachment (PERSIST_WHEN/WHILE/DOUBLE/ECHO). Step-5/step-6 reorder + ECHO-as-conditional-WHEN flagged for state.md sync (RUL-50). |
+| RUL-46 | K | #39 | Goal-claim engine; ADR-0005 ratifies retype |
 
 **Cross-cutting fixes landed via RUL-23 during the sweep**:
 - `revealed_effect=GAIN_VP:1` pin on `test_effects_nouns.py` and `test_goals.py` helpers (D's dispatcher requires it; both PRs slipped through CLEAN merge mechanics into broken main)
@@ -39,6 +41,7 @@ Linear board: https://linear.app/rulso (team `RUL`, projects: Engine / Infra / B
 - RUL-47: Round-flow effect-deck draw (D scoped to start_game seeding; `enter_round_start` step 6 still reveals NOOP placeholder)
 - RUL-48: `cards-inventory.md` field-name fix (`noun.hits` reads `hits_taken_this_game`)
 - RUL-49: Wire BLESSED into chip-loss handlers (E shipped `consume_blessed_or_else` primitive; call-site flip deferred)
+- RUL-50: Sync design/state.md with engine — JOKER step-reorder + ECHO conditional semantics (J's hand-back design choices)
 
 **Lessons captured** (`docs/workflow_lessons.md`):
 - 2026-05-10: revealed_effect pin fan-out — every Phase 3 PR needed pin; CLEAN merge mechanics didn't catch
