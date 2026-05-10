@@ -22,6 +22,7 @@ from rulso.state import (
     Card,
     CardType,
     GameState,
+    GoalCard,
     Player,
     RuleBuilder,
     RuleKind,
@@ -73,7 +74,16 @@ def _if_rule(subject_name: str, op: str, n: int, noun_name: str) -> RuleBuilder:
 
 def _state_with_goals(goal_count: int = 3) -> GameState:
     players = tuple(Player(id=f"p{i}", seat=i) for i in range(PLAYER_COUNT))
-    goals = tuple(Card(id=f"g{i}", type=CardType.NOUN, name=f"GOAL_{i}") for i in range(goal_count))
+    goals = tuple(
+        GoalCard(
+            id=f"g{i}",
+            name=f"GOAL_{i}",
+            claim_condition="full_hand",
+            vp_award=1,
+            claim_kind="renewable",
+        )
+        for i in range(goal_count)
+    )
     return GameState(players=players, active_goals=goals)
 
 
