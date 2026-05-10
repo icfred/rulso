@@ -41,14 +41,14 @@ A card game about writing rules together that never quite go where you wanted.
 
 ## Try it
 
-The M1.5 engine plays a four-bot game and narrates each round to stdout. From the repo root:
+The M2 engine plays a four-bot game and narrates each round to stdout. From the repo root:
 
 ```bash
 uv sync --project engine
-uv run --project engine rulso --seed 0 --rounds 100
+uv run --project engine rulso --seed 5 --rounds 100
 ```
 
-Try a few seeds. Some end with a winner (one of the bots reaches `VP_TO_WIN`); some hit the round cap because the dealer's opening hand has no `SUBJECT` card and the rule fails before anyone else gets to play. Both endings are expected M1.5 variance — the bots are deliberately near-random while the substrate is being locked in.
+Seed 5 reaches a winner in 14 rounds and surfaces most of the M2 vocabulary: `ANYONE` / `EACH_PLAYER` scoping, the floating `THE LEADER` / `THE WOUNDED` labels, OP-only comparator MODIFIERs with dice rolls, and a goal-claim chain that hands `p3` the deciding VP. Try a few seeds — some end with a winner (one of the bots reaches `VP_TO_WIN`); others hit the round cap because the dealer's opening hand has no `SUBJECT` card and the rule fails before anyone else gets to play. Both endings are expected M2 variance — the bots are deliberately near-random while the substrate is being locked in. M3 ISMCTS will tighten the bimodal winner split.
 
 Want to play a hand yourself before the smart bots land? Take one of the four seats and let random bots fill the rest:
 
