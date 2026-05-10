@@ -23,8 +23,17 @@ from rulso.grammar import IfRule, render_if_rule
 from rulso.labels import LABEL_NAMES, recompute_labels
 from rulso.state import Card, GameState, Player, RuleBuilder
 
-# M1 NOUN vocabulary — resource name → ``Player`` attribute.
-_NOUN_RESOURCES: dict[str, str] = {"CHIPS": "chips", "VP": "vp"}
+# M1 NOUN vocabulary — render-name → ``Player`` attribute holding the value.
+_PLAYER_RESOURCE_NOUNS: dict[str, str] = {"CHIPS": "chips", "VP": "vp"}
+
+# RUL-44 M2 polymorphic NOUN render-names. Resolved by ``_noun_value`` against
+# fields outside ``Player.{chips,vp}`` (hand size, history counters, status,
+# state-level reads). All field names verified against state.py — ``HITS`` uses
+# ``PlayerHistory.hits_taken_this_game`` (RUL-26), not the placeholder
+# ``hits_this_round`` named in inventory text.
+_M2_NOUN_NAMES: frozenset[str] = frozenset(
+    {"CARDS", "RULES", "HITS", "GIFTS", "ROUNDS", "BURN_TOKENS"}
+)
 
 # Target-modifier tokens parsed from ``name`` after ``@``. The default
 # (no ``@`` suffix) is ``all_matched``. Token vocabulary tracks
@@ -110,7 +119,7 @@ def resolve_if_rule(
     if not scoped:
         return state
     matching = frozenset(
-        p.id for p in state.players if p.id in scoped and _evaluate_has(p, structured)
+        p.id for p in state.players if p.id in scoped and _evaluate_has(state, p, structured)
     )
     if not matching:
         return state
@@ -325,13 +334,47 @@ def _scope_subject(
     return frozenset(p.id for p in state.players if p.id == subject.name)
 
 
-def _evaluate_has(player: Player, rule: IfRule) -> bool:
-    """Evaluate ``HAS [QUANT] [NOUN]`` for a single player."""
-    attr = _NOUN_RESOURCES.get(rule.noun.name)
-    if attr is None:
-        raise ValueError(f"unknown NOUN {rule.noun.name!r}; M1 supports {sorted(_NOUN_RESOURCES)}")
+def _evaluate_has(state: GameState, player: Player, rule: IfRule) -> bool:
+    """Evaluate ``HAS [QUANT] [NOUN]`` for a single player.
+
+    ``state`` is read for the player-agnostic ``ROUNDS`` NOUN and for the
+    cross-player ``RULES`` count (``state.persistent_rules``). All other
+    NOUNs read from the player itself.
+    """
+    value = _noun_value(state, player, rule.noun.name)
     op, threshold = _parse_quant(rule.quant)
-    return _compare(getattr(player, attr), op, threshold)
+    return _compare(value, op, threshold)
+
+
+def _noun_value(state: GameState, player: Player, noun_name: str) -> int:
+    """Resolve a NOUN render-name to its integer reading for ``player``.
+
+    Dispatch order:
+      1. M1 player-resource NOUNs (``CHIPS``, ``VP``) — direct attribute read.
+      2. M2 polymorphic NOUNs (``CARDS``, ``RULES``, ``HITS``, ``GIFTS``,
+         ``ROUNDS``, ``BURN_TOKENS``) — sourced per ``design/cards-inventory.md``.
+
+    Unknown NOUN names raise ``ValueError``; the resolver does not silently
+    no-op (silent zero would be indistinguishable from a legitimate zero
+    reading and mask data bugs).
+    """
+    attr = _PLAYER_RESOURCE_NOUNS.get(noun_name)
+    if attr is not None:
+        return getattr(player, attr)
+    if noun_name == "CARDS":
+        return len(player.hand)
+    if noun_name == "RULES":
+        return sum(1 for r in state.persistent_rules if r.created_by == player.id)
+    if noun_name == "HITS":
+        return player.history.hits_taken_this_game
+    if noun_name == "GIFTS":
+        return player.history.cards_given_this_game
+    if noun_name == "ROUNDS":
+        return state.round_number
+    if noun_name == "BURN_TOKENS":
+        return player.status.burn
+    known = sorted(set(_PLAYER_RESOURCE_NOUNS) | _M2_NOUN_NAMES)
+    raise ValueError(f"unknown NOUN {noun_name!r}; supported: {known}")
 
 
 def _parse_quant(quant: Card) -> tuple[str, int]:

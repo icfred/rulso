@@ -235,9 +235,19 @@ deck:
   - { id: subj.p3, copies: 3 }
   - { id: subj.leader, copies: 3 }
   - { id: subj.wounded, copies: 3 }
-  # NOUN — 8 physical (2 kinds × 4 copies).
+  # NOUN — 8 physical M1.5 baseline (2 kinds × 4 copies) +
+  #        12 physical M2 (RUL-44: 6 kinds × 2 copies) = 20 physical.
+  # M2 copies sized at 2 to mirror RUL-34's worst-case smoke probe — enough
+  # presence to exercise the Phase-3 NOUN dispatcher without dominating the
+  # M1.5 fire-rate distribution.
   - { id: noun.chips, copies: 4 }
   - { id: noun.vp, copies: 4 }
+  - { id: noun.cards, copies: 2 }
+  - { id: noun.rules, copies: 2 }
+  - { id: noun.hits, copies: 2 }
+  - { id: noun.gifts, copies: 2 }
+  - { id: noun.rounds, copies: 2 }
+  - { id: noun.burn, copies: 2 }
   # MODIFIER — 24 physical (12 kinds × 2 copies, baked-N comparators).
   - { id: mod.cmp.lt.3, copies: 2 }
   - { id: mod.cmp.lt.5, copies: 2 }

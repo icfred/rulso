@@ -232,18 +232,21 @@ def test_default_main_deck_excludes_effect_and_goal_cards() -> None:
 def test_default_main_deck_multiplies_copies() -> None:
     """Main deck composition matches the yaml ``deck:`` section.
 
-    M1.5 baseline composition is held identical post-RUL-31 so seed-0 output
-    stays byte-for-byte stable. Phase-3 engine tickets re-extend ``deck:`` as
-    the consumer paths land.
+    Composition is extended as Phase 3 consumer paths land. RUL-44 adds the
+    six M2 polymorphic NOUNs at 2 copies each — pre-Phase-3 baseline was
+    50 (6 SUBJECT × 3 + 2 NOUN × 4 + 12 MODIFIER × 2).
     """
     decks = build_default_deck()
     counts: dict[str, int] = {}
     for c in decks.main:
         counts[c.id] = counts.get(c.id, 0) + 1
-    # 6 SUBJECT × 3 + 2 NOUN × 4 + 12 MODIFIER × 2 = 18 + 8 + 24 = 50.
-    assert sum(counts.values()) == 50
+    # 6 SUBJECT × 3 + 8 NOUN (2×4 M1.5 + 6×2 M2 RUL-44) + 12 MODIFIER × 2
+    # = 18 + 20 + 24 = 62.
+    assert sum(counts.values()) == 62
     assert counts["subj.p0"] == 3
     assert counts["noun.chips"] == 4
+    assert counts["noun.cards"] == 2
+    assert counts["noun.burn"] == 2
     assert counts["mod.cmp.eq.5"] == 2
 
 
