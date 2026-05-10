@@ -10,11 +10,14 @@ You are NOT a sub-agent of an orchestrator session. You are an independent Opus 
 2. Read `workflows/feature-work.md` (this file).
 3. Read `docs/<area>/readme.md` for your area, plus any sub-feature docs the hand-over prompt lists.
 4. Read the Linear ticket linked in the hand-over prompt — Linear is the canonical definition of done.
-5. Create your worktree from the repo root:
+5. **Fetch latest origin/main, then create your worktree branched from `origin/main` directly:**
    ```
-   git worktree add .worktrees/<TICKET-ID>-<slug> -b <TICKET-ID>-<slug>
+   git fetch origin
+   git worktree add .worktrees/<TICKET-ID>-<slug> -b <TICKET-ID>-<slug> origin/main
    ```
    Then `cd` into it. All your work happens here.
+
+   **Why `origin/main` and not just default HEAD?** The orchestrator merges PRs via `gh pr merge` which advances `origin/main` but does NOT update local `main`. If you branch from local `main` (the default when you omit a base), your worktree starts on a stale base — missing recently merged tickets your work likely depends on. Always `git fetch origin` first and explicitly base on `origin/main`. (Lesson logged in `docs/workflow_lessons.md`, 2026-05-10.)
 6. Confirm the Linear ticket is in `In Progress` (the orchestrator should have moved it; if not, move it yourself).
 
 ## Work
