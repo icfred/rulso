@@ -27,3 +27,4 @@ Thumbs.db
 
 # Generated client types (regenerated from engine Pydantic models)
 client/src/types/generated/
+.mcp.json
