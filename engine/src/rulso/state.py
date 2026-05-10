@@ -200,10 +200,14 @@ class GameState(BaseModel):
     discard: tuple[Card, ...] = ()
     effect_deck: tuple[Card, ...] = ()
     effect_discard: tuple[Card, ...] = ()
-    goal_deck: tuple[Card, ...] = ()
-    goal_discard: tuple[Card, ...] = ()
+    # RUL-46: retype goal piles + face-up slots to GoalCard per
+    # design/goals-inventory.md ("Schema fit"). RUL-26 stubbed these as Card
+    # before GoalCard existed; ratifying the spike-locked shape — no field
+    # renamed or removed, the value type narrows from Card to GoalCard.
+    goal_deck: tuple[GoalCard, ...] = ()
+    goal_discard: tuple[GoalCard, ...] = ()
     # RUL-26: 3 face-up goal slots per design/state.md; None marks an empty slot.
-    active_goals: tuple[Card | None, ...] = (None, None, None)
+    active_goals: tuple[GoalCard | None, ...] = (None, None, None)
     # RUL-26: SHOP-card pile; populated when SHOP card content lands in M2.
     shop_deck: tuple[Card, ...] = ()
     active_rule: RuleBuilder | None = None

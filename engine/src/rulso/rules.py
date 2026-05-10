@@ -28,9 +28,10 @@ from __future__ import annotations
 import random
 
 from rulso import cards as cards_module
-from rulso import effects, labels, legality, persistence
+from rulso import effects, goals, labels, legality, persistence
 from rulso.cards import ConditionTemplate
 from rulso.state import (
+    ACTIVE_GOALS,
     BURN_TICK,
     HAND_SIZE,
     PLAYER_COUNT,
@@ -38,6 +39,7 @@ from rulso.state import (
     Card,
     CardType,
     GameState,
+    GoalCard,
     Phase,
     Play,
     Player,
@@ -89,6 +91,20 @@ def start_game(seed: int = 0) -> GameState:
     # RUL-39: seed effect_deck from cards.yaml. Round-flow draw lands later.
     effect_deck = cards_module.load_effect_cards()
 
+    # --- RUL-46: goal-deck seed (own block) ---
+    # Same `rng` continues — keeps `start_game(seed)` deterministic (RUL-18).
+    # `state.md` Game Start step 3 reveals 3 face-up goals; if the catalogue
+    # has fewer than ACTIVE_GOALS, leftover slots stay None per the spike's
+    # "deck exhaustion" handling.
+    goal_pool = list(cards_module.load_goal_cards())
+    rng.shuffle(goal_pool)
+    initial_goals: list[GoalCard | None] = []
+    for _ in range(ACTIVE_GOALS):
+        initial_goals.append(goal_pool.pop() if goal_pool else None)
+    initial_active_goals: tuple[GoalCard | None, ...] = tuple(initial_goals)
+    initial_goal_deck: tuple[GoalCard, ...] = tuple(goal_pool)
+    # --- end RUL-46 block ---
+
     return GameState(
         phase=Phase.ROUND_START,
         round_number=0,
@@ -97,6 +113,8 @@ def start_game(seed: int = 0) -> GameState:
         players=tuple(players),
         deck=remaining_deck,
         effect_deck=effect_deck,
+        goal_deck=initial_goal_deck,
+        active_goals=initial_active_goals,
     )
 
 
@@ -232,7 +250,9 @@ def enter_resolve(state: GameState, *, rng: random.Random | None = None) -> Game
     # Step 6: persistent rule trigger check (no-op when none active).
     if state.persistent_rules:
         state = persistence.check_when_triggers(state, labels.recompute_labels(state))
-    # Steps 5 & 7: joker (guarded above) + goal claim — M2 stubs (no-op M1.5).
+    # Step 5: joker — guarded above (raises NotImplementedError).
+    # Step 7: goal claim check (RUL-46) — awards VP per `design/goals-inventory.md`.
+    state = goals.check_claims(state)
     # Step 8: label recompute — implicit (computed-not-stored).
     # Step 9: win check.
     winner = _check_winner(state.players)
