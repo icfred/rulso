@@ -1,4 +1,4 @@
-_Last edited: 2026-05-09 by RUL-10_
+_Last edited: 2026-05-10 by RUL-27_
 
 # bots
 
@@ -22,7 +22,7 @@ Kept in `bots/` for now. Promote to `state.py` or `protocol.py` when the protoco
 
 - Pure function. `rng: random.Random` injected; deterministic for a given seed.
 - Only enumerates actions when `phase == BUILD`; returns `Pass` for all other phases.
-- Action space flattened to a list; uniform sample via `rng.choice`.
+- Plays and discards enumerated separately. When both pools are non-empty, `play_card` is chosen with probability `PLAY_BIAS = 0.85` (single `rng.random()` coin flip), otherwise uniform `rng.choice` within whichever pool is non-empty. Reason: hand=7 + chips=50 makes the discard space (~63 actions) swamp the play space (1..4); uniform sampling stalls rule resolution. Bias preserves rule-resolve throughput while leaving exploration in the discard pool.
 
 ### Legal-action rules
 
@@ -34,7 +34,7 @@ Kept in `bots/` for now. Promote to `state.py` or `protocol.py` when the protoco
 
 **DiscardRedraw** — one entry per combination of `k` cards (k ∈ 1..min(3, hand_size, chips // DISCARD_COST)):
 - Requires `chips >= DISCARD_COST (5)` and non-empty hand.
-- All subsets of size 1..3 are enumerated, so the bot can bias toward discards when hands are full. Acceptable for a baseline bot.
+- All subsets of size 1..3 are enumerated. The play-over-discard bias on `choose_action` counteracts the resulting size disparity between the two pools.
 
 **Pass** — returned when the combined list is empty.
 

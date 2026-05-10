@@ -1,8 +1,9 @@
 """Random-legal bot.
 
-Uniformly samples a legal action for the active player. M1 baseline; M3 ISMCTS
-uses this for rollouts and as a baseline opponent. Pure function: state in,
-action out, RNG injected. No module-level mutable state.
+Picks a uniformly-random legal action for the active player, biased toward
+``play_card`` over ``discard_redraw`` when both are legal. M1 baseline; M3
+ISMCTS uses this for rollouts and as a baseline opponent. Pure function:
+state in, action out, RNG injected. No module-level mutable state.
 
 The ``Action`` type is defined here for now — ``state.py`` does not yet model
 player actions. Future tickets can promote it once the surface stabilises
@@ -30,6 +31,13 @@ from rulso.state import (
 )
 
 _FROZEN = ConfigDict(frozen=True)
+
+# Probability of picking from the play_card pool when both play_card and
+# discard_redraw are legal. With hand=7 and chips=50, the discard space
+# (C(7,1..3) = 63 actions) swamps the play space (1..4 actions); uniform
+# sampling makes the bot discard ~84% of the time and rules rarely fill.
+# 0.85 keeps the bot mostly constructive while preserving exploration.
+PLAY_BIAS = 0.85
 
 
 class PlayCard(BaseModel):
@@ -71,17 +79,28 @@ Action = Annotated[
 
 
 def choose_action(state: GameState, player_id: str, rng: random.Random) -> Action:
-    """Return a uniformly random legal action for ``player_id``.
+    """Return a legal action for ``player_id`` with a play-over-discard bias.
 
-    Deterministic given ``rng``: same RNG state in, same action out. Returns
-    :class:`Pass` when the player has no legal play and cannot afford a
-    discard-redraw. Pure function — no global state, no mutation of inputs.
+    When both ``play_card`` and ``discard_redraw`` are legal, ``play_card`` is
+    chosen with probability :data:`PLAY_BIAS`, otherwise the bot picks
+    uniformly within whichever pool is non-empty. Falls back to :class:`Pass`
+    when neither is legal. Deterministic given ``rng``: same RNG state in,
+    same action out. Pure function — no global state, no mutation of inputs.
     """
     player = _find_player(state, player_id)
-    actions = _enumerate_actions(state, player)
-    if not actions:
+    if state.phase is not Phase.BUILD:
         return Pass()
-    return rng.choice(actions)
+    plays = _enumerate_plays(state, player)
+    discards = _enumerate_discards(player)
+    if plays and discards:
+        if rng.random() < PLAY_BIAS:
+            return rng.choice(plays)
+        return rng.choice(discards)
+    if plays:
+        return rng.choice(plays)
+    if discards:
+        return rng.choice(discards)
+    return Pass()
 
 
 def _find_player(state: GameState, player_id: str) -> Player:
@@ -89,20 +108,6 @@ def _find_player(state: GameState, player_id: str) -> Player:
         if p.id == player_id:
             return p
     raise ValueError(f"unknown player {player_id!r}")
-
-
-def _enumerate_actions(state: GameState, player: Player) -> list[Action]:
-    """Flatten every legal (kind, params) tuple into one list for uniform sampling.
-
-    Only legal during BUILD; returns empty list for other phases so the caller
-    falls back to :class:`Pass`.
-    """
-    if state.phase is not Phase.BUILD:
-        return []
-    actions: list[Action] = []
-    actions.extend(_enumerate_plays(state, player))
-    actions.extend(_enumerate_discards(player))
-    return actions
 
 
 def _enumerate_plays(state: GameState, player: Player) -> list[PlayCard]:
