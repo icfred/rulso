@@ -1,22 +1,27 @@
 """Round-flow phase machine.
 
 Pure-function transitions over ``GameState``. Implements the round flow defined
-in ``design/state.md``. Shop, persistent-rule WHILE tick, joker attachment and
-real effect-card application are stubbed — see ``docs/engine/round-flow.md``.
+in ``design/state.md``. Shop and persistent-rule WHILE tick are stubbed — see
+``docs/engine/round-flow.md``.
 
 All functions return a new ``GameState``; the input state is never mutated.
 
-RNG contract (RUL-18):
+RNG contract (RUL-18, extended by RUL-47):
 
 * ``start_game(seed)`` performs the initial deck shuffle and 4×HAND_SIZE deal
   using ``random.Random(seed)``. The rng is consumed and discarded — same seed
   in, same opening state out.
+* ``enter_round_start(state, *, rng=None)`` consumes the rng to reshuffle
+  ``state.effect_discard`` back into ``state.effect_deck`` when step 6's draw
+  finds an empty deck (RUL-47). ``rng=None`` falls back to a fresh
+  non-deterministic ``random.Random()``.
 * ``enter_resolve(state, *, rng=None)`` shuffles ``state.discard`` back into
-  ``state.deck`` when refilling depletes the deck. Pass an explicit
+  ``state.deck`` when refilling depletes the main deck. Pass an explicit
   ``random.Random(...)`` for deterministic mid-game refills (cli.py does).
   ``rng=None`` falls back to a fresh non-deterministic ``random.Random()``.
-* ``advance_phase(state, *, rng=None)`` forwards ``rng`` to ``enter_resolve``;
-  other phase boundaries don't shuffle.
+* ``advance_phase(state, *, rng=None)`` forwards ``rng`` to both
+  ``enter_round_start`` and ``enter_resolve``; other phase boundaries don't
+  shuffle.
 
 The seed is intentionally NOT carried on ``GameState`` (substrate is
 additive-only and frozen; threading the RNG through public entry points keeps
@@ -66,19 +71,6 @@ _JOKER_PERSISTENT_VARIANTS: frozenset[str] = frozenset(
 _JOKER_VARIANTS: frozenset[str] = frozenset(
     {_JOKER_PERSIST_WHEN, _JOKER_PERSIST_WHILE, _JOKER_DOUBLE, _JOKER_ECHO}
 )
-
-# --- Round-flow placeholder effect card -------------------------------------
-# Round-flow draws an effect card from ``state.effect_deck`` at round_start
-# step 6 in a follow-up Phase 3 ticket. Until then the round reveals this
-# NOOP placeholder so ``revealed_effect`` is non-None during BUILD/RESOLVE
-# (narration code reads it) and the dispatcher returns state unchanged when
-# the round resolves.
-_M1_EFFECT_CARD: Card = Card(
-    id="m1_stub_effect",
-    type=CardType.EFFECT,
-    name="NOOP",
-)
-
 
 # --- Public entry points ----------------------------------------------------
 
@@ -146,9 +138,9 @@ def advance_phase(state: GameState, *, rng: random.Random | None = None) -> Game
     """
     phase = state.phase
     if phase is Phase.LOBBY:
-        return enter_round_start(state)
+        return enter_round_start(state, rng=rng)
     if phase is Phase.ROUND_START:
-        return enter_round_start(state)
+        return enter_round_start(state, rng=rng)
     if phase is Phase.BUILD:
         return _build_tick(state)
     if phase is Phase.RESOLVE:
@@ -160,12 +152,17 @@ def advance_phase(state: GameState, *, rng: random.Random | None = None) -> Game
     raise ValueError(f"unknown phase {phase!r}")
 
 
-def enter_round_start(state: GameState) -> GameState:
+def enter_round_start(state: GameState, *, rng: random.Random | None = None) -> GameState:
     """Run round_start steps 1-8 from ``design/state.md`` atomically.
 
     Ends in ``phase=BUILD`` with the dealer's first slot pre-filled — unless
     the dealer holds no card matching slot 0's type, in which case the rule
     fails immediately and the dealer rotates (rule never enters BUILD).
+
+    ``rng`` is consumed by the step-6 effect-deck draw to reshuffle
+    ``state.effect_discard`` back into ``state.effect_deck`` when the deck is
+    empty (RUL-47). ``rng=None`` falls back to a fresh non-deterministic
+    ``random.Random()``.
     """
     new_round = state.round_number + 1
     # Step 2: status tick — BURN drains chips, MUTE clears (RUL-40, RUL-30).
@@ -181,9 +178,14 @@ def enter_round_start(state: GameState) -> GameState:
         tick_state = persistence.tick_while_rules(tick_state, tick_labels)
         players = tick_state.players
     # Step 5: shop check — bypassed in M1. See docs/engine/round-flow.md.
-    # Step 6: reveal effect card. Real effect-deck draw lands with M2; the
-    # stub keeps revealed_effect non-None during BUILD/RESOLVE.
-    revealed_effect = _M1_EFFECT_CARD
+    # Step 6: reveal effect card from effect_deck (RUL-47). Recycle
+    # effect_discard if the deck is empty per design/effects-inventory.md
+    # "Deck-empty reshuffle". ``revealed_effect`` stays None when both piles
+    # are empty (no cards to draw — same path the NOOP card exercises).
+    draw_rng = rng if rng is not None else random.Random()
+    revealed_effect, effect_deck, effect_discard = _draw_effect_card(
+        state.effect_deck, state.effect_discard, draw_rng
+    )
     # Step 7: dealer plays the condition template + slot 0.
     condition = _draw_condition_template()
     slots = tuple(Slot(name=cs.name, type=cs.type) for cs in condition.slots)
@@ -194,8 +196,13 @@ def enter_round_start(state: GameState) -> GameState:
     chosen = legality.first_card_of_type(dealer.hand, first_slot.type)
     if chosen is None:
         # No legal seed-card in the dealer's hand → rule fails immediately.
-        # Round is consumed (round_number ticked) and dealer rotates.
+        # Round is consumed (round_number ticked) and dealer rotates. The
+        # just-drawn revealed_effect goes to effect_discard rather than being
+        # lost (design/effects-inventory.md "Rule-failure interaction").
         new_dealer_seat = (state.dealer_seat + 1) % PLAYER_COUNT
+        failed_effect_discard = (
+            effect_discard + (revealed_effect,) if revealed_effect is not None else effect_discard
+        )
         return state.model_copy(
             update={
                 "round_number": new_round,
@@ -205,6 +212,8 @@ def enter_round_start(state: GameState) -> GameState:
                 "dealer_seat": new_dealer_seat,
                 "build_turns_taken": 0,
                 "revealed_effect": None,
+                "effect_deck": effect_deck,
+                "effect_discard": failed_effect_discard,
             }
         )
 
@@ -227,6 +236,8 @@ def enter_round_start(state: GameState) -> GameState:
             "players": players,
             "phase": Phase.ROUND_START,
             "revealed_effect": revealed_effect,
+            "effect_deck": effect_deck,
+            "effect_discard": effect_discard,
             "active_rule": active_rule,
             "build_turns_taken": 0,
         }
@@ -320,6 +331,15 @@ def enter_resolve(state: GameState, *, rng: random.Random | None = None) -> Game
         if joker is not None:
             discarded = discarded + (joker,)
     cleaned_players = tuple(status.tick_resolve_end(p) for p in state.players)
+    # Step 10 (effect cleanup, RUL-47): the round's revealed_effect was
+    # consumed by step 4's dispatch. Append it to effect_discard so the
+    # effect deck is recyclable; mirrors the fragment-discard hook above.
+    consumed_effect = state.revealed_effect
+    new_effect_discard = (
+        state.effect_discard + (consumed_effect,)
+        if consumed_effect is not None
+        else state.effect_discard
+    )
     # Step 11: rotate dealer.
     new_dealer = (state.dealer_seat + 1) % PLAYER_COUNT
     # Step 12: refill hands.
@@ -328,6 +348,7 @@ def enter_resolve(state: GameState, *, rng: random.Random | None = None) -> Game
         update={
             "players": cleaned_players,
             "discard": state.discard + discarded,
+            "effect_discard": new_effect_discard,
         }
     )
     refilled = _refill_hands(state_post_discard, refill_rng)
@@ -490,6 +511,32 @@ def _draw_condition_template() -> ConditionTemplate:
     return templates[0]
 
 
+def _draw_effect_card(
+    effect_deck: tuple[Card, ...],
+    effect_discard: tuple[Card, ...],
+    rng: random.Random,
+) -> tuple[Card | None, tuple[Card, ...], tuple[Card, ...]]:
+    """Pop the top card from ``effect_deck``; recycle ``effect_discard`` if empty.
+
+    Returns ``(drawn_card_or_None, new_effect_deck, new_effect_discard)``. When
+    both piles are empty, the drawn card is ``None`` and both piles stay empty
+    (per design/effects-inventory.md "Deck-empty reshuffle"). The recycle
+    shuffles ``effect_discard`` into ``effect_deck`` via ``rng`` and resets the
+    discard to empty before popping — mirrors :func:`_refill_hands`'s deck
+    refill so seeded games stay reproducible.
+    """
+    deck = list(effect_deck)
+    discard = list(effect_discard)
+    if not deck:
+        if not discard:
+            return None, (), ()
+        deck = discard
+        rng.shuffle(deck)
+        discard = []
+    drawn = deck.pop()
+    return drawn, tuple(deck), tuple(discard)
+
+
 def _refill_hands(state: GameState, rng: random.Random) -> GameState:
     """Step 12: refill each player's hand to ``HAND_SIZE``.
 
@@ -560,12 +607,23 @@ def _build_tick(state: GameState) -> GameState:
 
 
 def _fail_rule_and_rotate(state: GameState) -> GameState:
-    """Rule failed: discard fragments, rotate dealer, return to ROUND_START."""
+    """Rule failed: discard fragments, rotate dealer, return to ROUND_START.
+
+    The round's revealed_effect (drawn at the prior round_start step 6) is
+    pushed to effect_discard alongside the fragments — design/effects-
+    inventory.md "Rule-failure interaction (decided: discard)".
+    """
     rule = state.active_rule
     discarded = (
         tuple(s.filled_by for s in rule.slots if s.filled_by is not None)
         if rule is not None
         else ()
+    )
+    consumed_effect = state.revealed_effect
+    new_effect_discard = (
+        state.effect_discard + (consumed_effect,)
+        if consumed_effect is not None
+        else state.effect_discard
     )
     new_dealer = (state.dealer_seat + 1) % PLAYER_COUNT
     return state.model_copy(
@@ -573,6 +631,7 @@ def _fail_rule_and_rotate(state: GameState) -> GameState:
             "phase": Phase.ROUND_START,
             "active_rule": None,
             "discard": state.discard + discarded,
+            "effect_discard": new_effect_discard,
             "dealer_seat": new_dealer,
             "build_turns_taken": 0,
             "revealed_effect": None,
