@@ -1,4 +1,4 @@
-_Last updated: 2026-05-10 by orchestrator session — RUL-54 SHIPPED (rng determinism substrate fix unblocking RUL-35); RUL-35 ready to re-dispatch against post-RUL-54 main; lesson captured to workflow_lessons.md; RUL-51 SHOP + RUL-53 docs queued for Wave 4_
+_Last updated: 2026-05-10 by orchestrator session — RUL-35 SHIPPED (Wave 3 gate, M2 watchable smoke at 5/10 deterministic floor); RUL-55 filed for Phase 3.5 polish (winner-emergence push); RUL-51 SHOP + RUL-53 docs + RUL-55 polish ready for Wave 4 fan_
 
 # Rulso — orchestrator bootstrap
 
@@ -12,14 +12,22 @@ Linear board: https://linear.app/rulso (team `RUL`, projects: Engine / Infra / B
 |---|---|---|---|
 | RUL-5 | M1: Engine core | 4-bot CLI game runs end-to-end, IF rules resolve, state machine sound | **Done** |
 | RUL-15 | M1.5: Watchable engine | First moment the game is *real* | **Done** (closed 2026-05-10) |
-| RUL-24 | M2: Full card set | Every card type and mechanic from cards.yaml works | Phase 1 + Phase 2 + Phase 3 fan SHIPPED + Wave 1 + Wave 2 SHIPPED. Wave 3 gate (RUL-35) ready. RUL-51 SHOP closes M2 after Wave 3. |
+| RUL-24 | M2: Full card set | Every card type and mechanic from cards.yaml works | Phase 1 + Phase 2 + Phase 3 fan + Wave 1 + Wave 2 + Wave 3 (RUL-35) SHIPPED. Wave 4 (RUL-51 SHOP + RUL-53 docs + RUL-55 polish) ready to dispatch. RUL-51 closes M2. |
 | RUL-23 | Meta — orchestrator-authored cross-cutting commits | Permanent home for orchestrator commits | Permanent In Progress |
 
 ## In flight
 
-**Nothing in flight.** RUL-54 (rng determinism substrate fix) merged. Main: **429 tests passing** (425 + 4 new from RUL-54), ruff clean. Seeded games now reproduce byte-identical stdout across back-to-back invocations past the effect-deck recycle threshold (round ~13). RUL-35 (M2 watchable smoke) is ready for re-dispatch.
+**Nothing in flight.** RUL-35 (M2 watchable smoke) merged. Main: **455 tests passing** (429 existing + 26 new from RUL-35), ruff clean. M2 substrate is now gated: deterministic 5/10 winners across seeds 0..9 at rounds=200, full lifecycle coverage (WHEN/WHILE/goal/effect) via test-side wrapper instrumentation. README "Try it" demo seed switched to `--seed 5 --rounds 100` (winner in 14 rounds; surfaces ANYONE / EACH_PLAYER / THE LEADER / THE WOUNDED / OP-only comparator dice / goal-claim path). Wave 4 ready to dispatch.
 
-### RUL-35 detour — what just happened
+### RUL-35 ship summary (2026-05-10, PR #52)
+
+- **Test-side instrumentation** (no production-module edits): module-scoped fixture wraps `effects.resolve_if_rule`, `persistence.check_when_triggers`, `persistence.tick_while_rules`, `goals.check_claims` as pure observers; restored in `try/finally`. 42/42 green in same pytest session as M1.5 + determinism — no leakage.
+- **Empirical baseline pinned**: 5/10 winners (seeds 1/2/3/5/7 win; 0/4/6/8/9 cap-hit at `dealer_no_seed_card` 175–188× per game). Probed at rounds=300; same 5/10 — bimodal split is substrate-driven, not budget-driven.
+- **Lifecycle floors** at sweep-aggregate ≥1 (observed counts: 843 WHEN, 1992 WHILE, 28 goal-VP, 235 chip-delta) — 25×–1000× the floor; trivially regression-detective without becoming brittle as bots/deck evolve.
+- **Worker flag (`tick_while_rules_changed_state == 0` for every seed)**: WHILE rules ARE in `persistent_rules` and being ticked (1574 calls across the sweep) but `_try_fire_persistent_rule` outputs equal-state because SUBJECT scope is empty on every tick. This is correct behaviour given current bots; downstream of dealer-finds-SUBJECT, addressed by RUL-55 polish.
+- **README cwd form preserved**: `uv run --project engine rulso …` per the README cwd-context lesson.
+
+### RUL-54 substrate fix (2026-05-10, PR #50, recap)
 
 RUL-35's first dispatch correctly stop-condition'd before any code change. Worker probed 5 × 10-seed sweeps and saw winner counts varying 4–6/10 across identical invocations. Root cause: `cli.py:85` called `advance_phase(state)` without rng for `ROUND_START`, and RUL-47's `enter_round_start` fell back to an unseeded `random.Random()` whenever the 12-card effect deck recycled (round ~13). Two latent twins at `enter_resolve` step 12 and `_refill_hands` used the same `rng or random.Random()` fallback shape.
 
@@ -32,10 +40,13 @@ RUL-54 fixed all three sites: shape (b) — `rng=None` tolerated when the reshuf
 - **Wave 1 (DONE 2026-05-10)**: RUL-47 (round-flow effect-deck draw — substrate wiring; PR #44) + RUL-48 (cards-inventory.md noun.hits text fix; PR #42) + RUL-50 (sync design/state.md JOKER step-reorder + ECHO conditional; PR #43). RUL-23 sweep: PR #45.
 - **Wave 2 (DONE 2026-05-10)**: RUL-49 (BLESSED chip-loss + BURN tick; PR #46) + RUL-52 (CLI human-seat; PR #47). Behavioural-substrate cascade contained in PR #46 (single fixture amended in-PR with explanatory comment; 8 new tests cover the BLESSED+chip-loss matrix). UI/driver work in PR #47 was strictly additive (kw-only `human_seat=None` defaults; existing CLI smoke tests passed unchanged). RUL-23 sweep: this PR.
 - **RUL-54 (substrate fix, DONE 2026-05-10)**: PR #50. Thread `effect_rng` through CLI → `enter_round_start`; eliminate `rng or random.Random()` fallbacks at three sites (now raise `ValueError` at the reshuffle path). Disjoint stream `seed ^ 0xEFFC`. New `test_determinism.py` exercises post-round-13 invariants. Unblocked RUL-35.
-- **Wave 3 (gate, solo) — READY for re-dispatch**: RUL-35 — M2 watchable smoke. Lands on fully-wired + deterministic M2 (post-RUL-54). Reclaims the winner-emergence assertion that RUL-34 deferred during Phase 3. Worker's pre-fix probe noted 4–6/10 winner variance; the deterministic baseline likely sits at the 5/10 boundary. Phase 3.5 polish pre-allocated; only filed if the final baseline lands at <5/10.
-- **Wave 4 (post-gate)**: RUL-51 — SHOP round (every 3 rounds, lowest-VP buys first). Held until Wave 3 baseline pins; SHOP shifts round cadence.
-- **Wave 4 docs chore**: RUL-53 — refresh `docs/engine/bots.md` for RUL-43/45/52 (PlayJoker, operator-MODIFIER skip rules, `enumerate_legal_actions`, `bots/human.py`). Parallel-safe with anything; pick up alongside RUL-51 or whenever a worker has spare cycles.
-- **Open after Wave 3**: M3 ISMCTS scoping. Lean is still to defer M3 until the user has playtested via RUL-52 (now landed) — the playtest data shapes ISMCTS payoff.
+- **Wave 3 (gate, solo) — DONE 2026-05-10**: RUL-35 — M2 watchable smoke (PR #52). Landed at the hand-over's "acceptable down to" boundary (5/10 deterministic winners). Phase 3.5 polish ticket filed as RUL-55 to push the floor up via bot heuristic and/or deck rebalance.
+- **Wave 4 (parallel fan, ready)**: three disjoint tickets ship together to close M2 + clear documentation debt:
+  - **RUL-51** — SHOP round (every 3 rounds, lowest-VP buys first). Closes M2. Touches `engine/src/rulso/rules.py` near round-cadence.
+  - **RUL-53** — refresh `docs/engine/bots.md` for RUL-43/45/52 (PlayJoker, operator-MODIFIER skip rules, `enumerate_legal_actions`, `bots/human.py`). Docs-only.
+  - **RUL-55** — Phase 3.5 polish: push winner emergence above 5/10 by tuning `bots/random.py` PLAY_BIAS (Lever A) and/or `engine/data/cards.yaml` deck composition (Lever B). Touches `bots/random.py` and/or `cards.yaml`. Disjoint with RUL-51's `rules.py` edits.
+  - All three parallel-safe: disjoint touch surfaces. RUL-55 is the only one that reshuffles seed-0 deals (if Lever B is chosen); reconcile at merge sweep against `_drive_to_first_build` (already seed-independent post-Phase-3 fix).
+- **Open after Wave 4**: M3 ISMCTS scoping. Lean is still to defer M3 until the user has playtested via RUL-52 (now landed) — the playtest data shapes ISMCTS payoff. M3 also subsumes RUL-55's "≤6/10 means bots are bad, not deck is wrong" stop condition.
 
 ### Wave 2 — final state (2026-05-10)
 
@@ -52,10 +63,11 @@ RUL-54 fixed all three sites: shape (b) — `rng=None` tolerated when the reshuf
 - RUL-52 worker: `docs/engine/bots.md` is stale (predates RUL-43/45 — no `PlayJoker`, no operator-MODIFIER skip rules). Filed **RUL-53** as a Wave 4 docs chore.
 
 **Outstanding follow-ups**:
-- RUL-35: M2 watchable smoke — **Wave 3 gate, ready for re-dispatch against post-RUL-54 main**.
-- RUL-51: SHOP round — **Wave 4**, blocked by RUL-35.
-- RUL-53: refresh `docs/engine/bots.md` for Phase 3 + Wave 2 — **Wave 4 docs chore**.
+- RUL-35: M2 watchable smoke — **DONE 2026-05-10 (PR #52)**.
+- RUL-51: SHOP round — **Wave 4**, parallel-safe with RUL-53 + RUL-55.
+- RUL-53: refresh `docs/engine/bots.md` for Phase 3 + Wave 2 — **Wave 4 docs chore**, parallel-safe.
 - RUL-54: rng determinism substrate fix — **DONE 2026-05-10 (PR #50)**.
+- RUL-55: Phase 3.5 polish (push winners above 5/10) — **Wave 4**, parallel-safe with RUL-51 + RUL-53.
 
 ### Phase 3 fan — final state (2026-05-10)
 
@@ -87,8 +99,8 @@ M2 Phase 2 SHIPPED (RUL-31 cards/state.py substrate, RUL-32 WHEN+WHILE lifecycle
 
 ## Open judgment calls
 
-- **Wave 3 stop condition**: if M2 watchable smoke can't reach ≥7/10 winners on the wired M2 deck, that's a Phase 3.5 polish problem — pause, hand back, file polish ticket. Do not lower the gate floor below 5/10.
-- **M3 vs further M2 polish**: defer until Wave 3 result + user CLI-playtest signal (RUL-52 now usable via `uv run rulso --seed 0 --human-seat 0`).
+- **RUL-55 polish stop condition**: if neither Lever A (bot heuristic) nor Lever B (deck rebalance) nor A+B can push winners above 6/10, hand back. The next move is M3 ISMCTS, not more polish — ≤6/10 with random bots is "the bots are bad", not "the deck is wrong".
+- **M3 vs further M2 polish**: defer until Wave 4 settles + user CLI-playtest signal (RUL-52 usable via `uv run --project engine rulso --seed 5 --rounds 100 --human-seat 0`).
 - **Canonical legality module**: RUL-52 worker correctly observed that `legality.legal_actions` doesn't exist — `bots.random.enumerate_legal_actions` is the de-facto canonical surface now. No refactor planned; if a third driver lands (replay, ISMCTS rollouts), reconsider then.
 
 ## Phase 3 prep — why RUL-34 landed first
@@ -106,7 +118,7 @@ RUL-31's worker probe found that even silently-safe deck additions (ANYONE/EACH 
 
 ## Done (chronological, this session)
 
-M1 + M1.5 + M2 Phase 1 + M2 Phase 2 + M2 Phase 3 fan + Wave 1 + Wave 2 = ~33 tickets shipped.
+M1 + M1.5 + M2 Phase 1 + M2 Phase 2 + M2 Phase 3 fan + Wave 1 + Wave 2 + Wave 3 (RUL-35) = ~34 tickets shipped.
 
 ## Locked decisions / substrate watchpoints
 
