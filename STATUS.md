@@ -1,4 +1,4 @@
-_Last updated: 2026-05-10 by orchestrator session — Phase 3 fan: 6 of 8 merged (D, F-blocked, G, H, I, K); E re-dispatch pending_
+_Last updated: 2026-05-10 by orchestrator session — Phase 3 fan: 7 of 8 merged (D, E, G, H, I, K + RUL-23 fixes); F blocked on ADR-0003; J still in flight_
 
 # Rulso — orchestrator bootstrap
 
@@ -22,7 +22,7 @@ Linear board: https://linear.app/rulso (team `RUL`, projects: Engine / Infra / B
 | ID | Letter | PR | State | Notes |
 |---|---|---|---|---|
 | RUL-39 | D | #37 | **Merged** | Dispatcher + registry hook on main |
-| RUL-40 | E | — | **Paused** — re-dispatch needed | D unblocked; pre-flight in worker hand-back |
+| RUL-40 | E | #40 | **Merged** | status.py + 7 effect-kind registrations (5 DoD + APPLY_MARKED + CLEAR_CHAINED extras); BLESSED chip-loss wiring deferred to RUL-49 |
 | RUL-41 | F | #35 | **Blocked** — ADR-0003 fix requested | Worker correctly flagged; PR comment posted asking subset (not first-match) semantics |
 | RUL-42 | G | #38 | **Merged** | Comparator dice (ADR-0002) |
 | RUL-43 | H | #36 | **Merged** | Operator MODIFIER fold (ADR-0004) |
@@ -36,8 +36,9 @@ Linear board: https://linear.app/rulso (team `RUL`, projects: Engine / Infra / B
 - `test_dealer_first_slot_card_came_from_dealer_hand` inline SUBJECT injection (same fragility, direct `start_game` path)
 
 **Follow-ups filed**:
-- Round-flow effect-deck draw (D scoped to start_game seeding; `enter_round_start` step 6 still reveals NOOP placeholder)
-- `cards-inventory.md` field-name fix: `noun.hits` reads `hits_taken_this_game`, not the placeholder `hits_this_round`
+- RUL-47: Round-flow effect-deck draw (D scoped to start_game seeding; `enter_round_start` step 6 still reveals NOOP placeholder)
+- RUL-48: `cards-inventory.md` field-name fix (`noun.hits` reads `hits_taken_this_game`)
+- RUL-49: Wire BLESSED into chip-loss handlers (E shipped `consume_blessed_or_else` primitive; call-site flip deferred)
 
 **Lessons captured** (`docs/workflow_lessons.md`):
 - 2026-05-10: revealed_effect pin fan-out — every Phase 3 PR needed pin; CLEAN merge mechanics didn't catch
