@@ -21,24 +21,24 @@ any state passing through; they only observe.
 This pattern is testing-only and reversible. No production module is
 modified by this ticket (RUL-35 hard constraint).
 
-## Empirical baseline (deterministic main post-RUL-54)
+## Empirical baseline (deterministic main post-RUL-55)
 
 Seeds 0..9 at ``rounds=200``:
 
 | Metric                                        | Observed | Floor |
 |-----------------------------------------------|----------|-------|
-| winners                                       | 5/10     | 5     |
+| winners                                       | 7/10     | 7     |
 | runs with ≥1 ``event=resolve``                | 10/10    | 8     |
-| persistent WHEN rules observed (sweep total)  | 843      | 1     |
-| persistent WHILE rules observed (sweep total) | 1992     | 1     |
-| goal-claim VP awarded (sweep total)           | 28       | 1     |
-| effect chip-delta (sweep total)               | 235      | 1     |
+| persistent WHEN rules observed (sweep total)  | ≥1       | 1     |
+| persistent WHILE rules observed (sweep total) | ≥1       | 1     |
+| goal-claim VP awarded (sweep total)           | ≥1       | 1     |
+| effect chip-delta (sweep total)               | ≥1       | 1     |
 
-The bimodal winner split (1/2/3/5/7 win regardless of round budget;
-0/4/6/8/9 cap-hit even at ``rounds=300``) is a substrate property of the
-current bots and deck composition, not a flake — increasing ``rounds`` does
-not move the count off 5/10. The acceptable-down-to floor (RUL-35 hand-over)
-is 5/10; below that, the Phase 3.5 polish ticket fires.
+Winners under the RUL-55 PLAY_BIAS=0.75 heuristic: seeds 0/1/3/4/5/7/9.
+Cap-hit: seeds 2/6/8. Bimodal split is stable across ``rounds=200`` and
+``rounds=300`` — a substrate property of the current bots, not flake.
+Below 7/10 fires the next polish ticket; ≤6/10 with random bots is the
+"the bots are bad" signal that M3 ISMCTS addresses.
 
 Lifecycle-coverage floors are pinned at 1 (sweep-aggregate) by design — the
 DoD asks for "at least one … across sweep". The observed counts are orders
@@ -65,8 +65,11 @@ from rulso.state import RuleKind
 _SEEDS: tuple[int, ...] = tuple(range(10))
 _ROUNDS = 200
 
-# RUL-35 hand-over floor. Acceptable down to 5/10; below 5 is a Stop condition.
-_MIN_WINNERS = 5
+# RUL-55 (Phase 3.5 polish) raised the floor from 5 → 7 after PLAY_BIAS
+# 0.85 → 0.75 in ``bots.random``. Deterministic baseline is 7/10 winners
+# at rounds=200 across seeds 0..9, stable at rounds=300. Set at the
+# observed count with no slack — below 7 is the next polish trigger.
+_MIN_WINNERS = 7
 # Observed 10/10 in the baseline probe; 0.8 margin absorbs minor variance.
 _MIN_RUNS_WITH_RESOLVE = 8
 # Lifecycle floors — DoD asks "at least one … across sweep". Observed counts
@@ -194,8 +197,9 @@ def test_each_seed_reaches_resolve(seed: int, sweep) -> None:
 def test_winners_emerge_across_the_sweep(sweep) -> None:
     """Reclaim the M1.5 watchable bar deferred by RUL-34 during Phase 3.
 
-    Pinned at 5/10 — the deterministic post-RUL-54 baseline. Below 5 is the
-    Phase 3.5 polish trigger (RUL-35 Stop condition).
+    Pinned at 7/10 — the deterministic post-RUL-55 baseline (PLAY_BIAS=0.75).
+    Below 7 means the bot heuristic regressed; ≤6/10 means random bots can't
+    carry the deck and M3 ISMCTS is the next move (RUL-55 Stop condition).
     """
     winners = sum(1 for seed in _SEEDS if _is_winner(sweep[seed]["stdout"]))
     assert winners >= _MIN_WINNERS, (

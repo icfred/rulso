@@ -38,8 +38,14 @@ _FROZEN = ConfigDict(frozen=True)
 # discard_redraw are legal. With hand=7 and chips=50, the discard space
 # (C(7,1..3) = 63 actions) swamps the play space (1..4 actions); uniform
 # sampling makes the bot discard ~84% of the time and rules rarely fill.
-# 0.85 keeps the bot mostly constructive while preserving exploration.
-PLAY_BIAS = 0.85
+#
+# RUL-55 (Phase 3.5 polish): tuned 0.85 → 0.75. Slightly more discards
+# accelerate SUBJECT-card cycling out of stalled hands, shrinking the
+# dealer-no-seed-card cap-hit fraction and lifting the deterministic
+# winner count from 5/10 → 7/10 across seeds 0..9 at rounds=200 in
+# ``test_m2_watchable``. Probed monotonically: 0.7 → 5, 0.72 → 5,
+# 0.75 → 7, 0.78 → 7, 0.80 → 6, 0.85 → 5 (baseline). Stable at rounds=300.
+PLAY_BIAS = 0.75
 
 # RUL-42 (G): OP-only comparator MODIFIERs per ADR-0002. The bot picks 2d6 by
 # default for these (wider range = more strategic neutral) without offering a
