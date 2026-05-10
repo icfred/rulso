@@ -12,6 +12,19 @@ Two related public entry points:
 A registry hook (:func:`register_effect_kind`) lets later Phase-3 tickets
 attach status / JOKER handlers without serial dependency on this ticket.
 
+Operator MODIFIER fold (RUL-43, ADR-0004):
+  * SUBJECT-targeted ops (``BUT``, ``AND``, ``OR``) walk
+    ``Slot.modifiers`` in (op, rhs-card) pairs and fold over the base scope —
+    ``BUT`` = set difference, ``AND``/``OR`` = set union (per ADR table).
+  * NOUN-targeted ops (``AND``, ``OR``) walk the NOUN slot's modifiers in
+    (op, rhs-card) pairs — ``AND`` = sum, ``OR`` = max.
+  * QUANT-targeted ops (``MORE_THAN``, ``AT_LEAST``) are standalone (no RHS);
+    they override the comparator's strictness — ``MORE_THAN`` strips equality
+    (GE→GT, LE→LT), ``AT_LEAST`` adds equality (GT→GE, LT→LE). Conflicts
+    resolve last-write-wins.
+  * Singular path (no operator MODIFIERs on any slot) is byte-identical to
+    the M1.5 resolver.
+
 Pure functions: input ``GameState`` is never mutated; a new state is returned.
 """
 
@@ -94,6 +107,21 @@ def register_effect_kind(kind: str, handler: EffectHandler) -> None:
 # untouched (so discard sees the original OP-only card on resolve cleanup).
 _OP_ONLY_COMPARATOR_NAMES: frozenset[str] = frozenset({"LT", "LE", "GT", "GE", "EQ"})
 
+# RUL-43 (ADR-0004): operator MODIFIER catalogue. Operator MODIFIERs share
+# ``CardType.MODIFIER`` with comparators; their semantics fork on ``card.name``.
+OPERATOR_MODIFIER_NAMES: frozenset[str] = frozenset({"BUT", "AND", "OR", "MORE_THAN", "AT_LEAST"})
+
+
+def is_operator_modifier(card: Card) -> bool:
+    """Return ``True`` if ``card`` is an operator MODIFIER (ADR-0004).
+
+    Operator MODIFIERs live alongside comparator MODIFIERs in the ``MODIFIER``
+    type but are routed through ``Slot.modifiers`` (attached) rather than
+    ``Slot.filled_by`` (filled). Callers that walk hands by ``card.type`` use
+    this predicate to skip them.
+    """
+    return card.name in OPERATOR_MODIFIER_NAMES
+
 
 def resolve_if_rule(
     state: GameState,
@@ -104,8 +132,10 @@ def resolve_if_rule(
 
     Pipeline:
       1. Render the rule (``grammar.render_if_rule``).
-      2. Scope SUBJECT → frozenset of player ids (label-aware).
-      3. Evaluate ``HAS [QUANT] [NOUN]`` for each scoped player.
+      2. Scope SUBJECT → frozenset of player ids (label-aware), then fold any
+         SUBJECT-targeted operator MODIFIERs (BUT / AND / OR per ADR-0004).
+      3. Evaluate ``HAS [QUANT] [NOUN]`` for each scoped player, applying the
+         NOUN- and QUANT-targeted operator MODIFIERs.
       4. Dispatch ``state.revealed_effect`` to every satisfying player via
          :func:`dispatch_effect`.
 
@@ -125,7 +155,8 @@ def resolve_if_rule(
     structured = _bake_quant_dice(structured, state)
     if labels is None:
         labels = recompute_labels(state)
-    scoped = _scope_subject(state, structured.subject, labels)
+    base_scope = _scope_subject(state, structured.subject, labels)
+    scoped = _fold_subject_modifiers(state, base_scope, structured.subject_modifiers, labels)
     if not scoped:
         return state
     matching = frozenset(
@@ -344,15 +375,53 @@ def _scope_subject(
     return frozenset(p.id for p in state.players if p.id == subject.name)
 
 
+def _fold_subject_modifiers(
+    state: GameState,
+    base: frozenset[str],
+    modifiers: tuple[Card, ...],
+    labels: dict[str, frozenset[str]],
+) -> frozenset[str]:
+    """Fold SUBJECT-targeted operator MODIFIERs over ``base`` (ADR-0004).
+
+    ``modifiers`` is read in (op, rhs-card) pairs. ``BUT`` subtracts the RHS's
+    own scope from the result; ``AND`` and ``OR`` union it in (per ADR-0004
+    table — both are "set union" on SUBJECT, ``OR`` aliasing ``AND``). Empty
+    ``modifiers`` returns ``base`` unchanged — the singular path.
+    """
+    if not modifiers:
+        return base
+    result = base
+    i = 0
+    while i < len(modifiers):
+        op = modifiers[i]
+        if op.name not in {"BUT", "AND", "OR"}:
+            raise ValueError(f"unexpected SUBJECT operator {op.name!r}; expected one of BUT/AND/OR")
+        if i + 1 >= len(modifiers):
+            raise ValueError(f"SUBJECT operator {op.name!r} missing RHS card in modifiers tuple")
+        rhs = modifiers[i + 1]
+        rhs_scope = _scope_subject(state, rhs, labels)
+        if op.name == "BUT":
+            result = result - rhs_scope
+        else:  # AND / OR — both unions per ADR-0004.
+            result = result | rhs_scope
+        i += 2
+    return result
+
+
 def _evaluate_has(state: GameState, player: Player, rule: IfRule) -> bool:
     """Evaluate ``HAS [QUANT] [NOUN]`` for a single player.
 
     ``state`` is read for the player-agnostic ``ROUNDS`` NOUN and for the
     cross-player ``RULES`` count (``state.persistent_rules``). All other
-    NOUNs read from the player itself.
+    NOUNs read from the player itself. Folds NOUN-targeted operator
+    MODIFIERs over the base read (``AND`` = sum, ``OR`` = max) and
+    QUANT-targeted operator MODIFIERs over the comparator op
+    (``MORE_THAN`` strips equality, ``AT_LEAST`` adds equality;
+    last-write-wins per ADR-0004).
     """
-    value = _noun_value(state, player, rule.noun.name)
+    value = _fold_noun_value(state, player, rule.noun, rule.noun_modifiers)
     op, threshold = _parse_quant(rule.quant)
+    op = _fold_quant_op(op, rule.quant_modifiers)
     return _compare(value, op, threshold)
 
 
@@ -385,6 +454,35 @@ def _noun_value(state: GameState, player: Player, noun_name: str) -> int:
         return player.status.burn
     known = sorted(set(_PLAYER_RESOURCE_NOUNS) | _M2_NOUN_NAMES)
     raise ValueError(f"unknown NOUN {noun_name!r}; supported: {known}")
+
+
+def _fold_noun_value(
+    state: GameState, player: Player, base_noun: Card, modifiers: tuple[Card, ...]
+) -> int:
+    """Fold NOUN-targeted operator MODIFIERs over the base ``Player`` read.
+
+    Walks ``modifiers`` in (op, rhs-card) pairs: ``AND`` sums the RHS read into
+    the running total, ``OR`` takes the max (per ADR-0004 NOUN column).
+    Empty ``modifiers`` returns the base read unchanged — the singular path.
+    """
+    value = _noun_value(state, player, base_noun.name)
+    if not modifiers:
+        return value
+    i = 0
+    while i < len(modifiers):
+        op = modifiers[i]
+        if op.name not in {"AND", "OR"}:
+            raise ValueError(f"unexpected NOUN operator {op.name!r}; expected one of AND/OR")
+        if i + 1 >= len(modifiers):
+            raise ValueError(f"NOUN operator {op.name!r} missing RHS card in modifiers tuple")
+        rhs = modifiers[i + 1]
+        rhs_value = _noun_value(state, player, rhs.name)
+        if op.name == "AND":
+            value = value + rhs_value
+        else:  # OR
+            value = max(value, rhs_value)
+        i += 2
+    return value
 
 
 def _parse_quant(quant: Card) -> tuple[str, int]:
@@ -426,6 +524,32 @@ def _bake_quant_dice(rule: IfRule, state: GameState) -> IfRule:
         )
     baked = quant.model_copy(update={"name": f"{quant.name}:{state.last_roll.value}"})
     return rule.model_copy(update={"quant": baked})
+
+
+def _fold_quant_op(op: str, modifiers: tuple[Card, ...]) -> str:
+    """Apply QUANT-targeted operator MODIFIERs to ``op`` (ADR-0004).
+
+    ``MORE_THAN`` strips equality (GE→GT, LE→LT) — forces strict comparison.
+    ``AT_LEAST`` adds equality (GT→GE, LT→LE) — forces non-strict.
+    Equality ``EQ`` is unaffected by either modifier (no strict/non-strict
+    axis to toggle). Conflicts resolve last-write-wins per ADR example 4.
+    """
+    for mod in modifiers:
+        if mod.name == "MORE_THAN":
+            if op == "GE":
+                op = "GT"
+            elif op == "LE":
+                op = "LT"
+        elif mod.name == "AT_LEAST":
+            if op == "GT":
+                op = "GE"
+            elif op == "LT":
+                op = "LE"
+        else:
+            raise ValueError(
+                f"unexpected QUANT operator {mod.name!r}; expected MORE_THAN or AT_LEAST"
+            )
+    return op
 
 
 def _compare(value: int, op: str, threshold: int) -> bool:

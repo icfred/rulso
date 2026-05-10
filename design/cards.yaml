@@ -267,3 +267,12 @@ deck:
   - { id: mod.cmp.gt, copies: 2 }
   - { id: mod.cmp.ge, copies: 2 }
   - { id: mod.cmp.eq, copies: 2 }
+  # RUL-43: operator MODIFIERs (ADR-0004) — 5 kinds × 2 copies = 10 physical.
+  # Attached to ``Slot.modifiers``, not ``filled_by``; the bot's play
+  # enumeration skips them until ADR-0004's legality extension lands a
+  # dedicated "play_operator" action shape.
+  - { id: mod.op.but, copies: 2 }
+  - { id: mod.op.and, copies: 2 }
+  - { id: mod.op.or, copies: 2 }
+  - { id: mod.op.more_than, copies: 2 }
+  - { id: mod.op.at_least, copies: 2 }
