@@ -111,6 +111,11 @@ _OP_ONLY_COMPARATOR_NAMES: frozenset[str] = frozenset({"LT", "LE", "GT", "GE", "
 # ``CardType.MODIFIER`` with comparators; their semantics fork on ``card.name``.
 OPERATOR_MODIFIER_NAMES: frozenset[str] = frozenset({"BUT", "AND", "OR", "MORE_THAN", "AT_LEAST"})
 
+# RUL-45 (J): JOKER:DOUBLE token. Kept local so resolve_if_rule can detect it
+# without importing rules.py (which would create a circular import); the
+# string is duplicated by design — rules.py owns the canonical catalogue.
+_JOKER_DOUBLE_NAME: str = "JOKER:DOUBLE"
+
 
 def is_operator_modifier(card: Card) -> bool:
     """Return ``True`` if ``card`` is an operator MODIFIER (ADR-0004).
@@ -182,7 +187,14 @@ def resolve_if_rule(
     )
     if not matching:
         return state
-    return dispatch_effect(state, state.revealed_effect, matching)
+    state = dispatch_effect(state, state.revealed_effect, matching)
+    # RUL-45 (J): JOKER:DOUBLE — re-dispatch the same effect on the same
+    # matching set, mirroring the H-style post-fold wrapper rather than
+    # touching the dispatcher core. The matching set is frozen at first
+    # dispatch — DOUBLE doubles the effect, not the scope evaluation.
+    if rule.joker_attached is not None and rule.joker_attached.name == _JOKER_DOUBLE_NAME:
+        state = dispatch_effect(state, state.revealed_effect, matching)
+    return state
 
 
 def dispatch_effect(

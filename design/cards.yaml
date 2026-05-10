@@ -280,3 +280,11 @@ deck:
   - { id: mod.op.or, copies: 2 }
   - { id: mod.op.more_than, copies: 2 }
   - { id: mod.op.at_least, copies: 2 }
+  # RUL-45: JOKERs (M2 Phase 3 J) — 4 kinds × 2 copies = 8 physical.
+  # Sized at 2 to match RUL-34 worst-case watchable-smoke probe (jkr.* each at
+  # +2 over baseline). Attach to ``RuleBuilder.joker_attached`` via the
+  # dedicated ``play_joker`` action; do not appear in ``Slot.filled_by``.
+  - { id: jkr.persist_when, copies: 2 }
+  - { id: jkr.persist_while, copies: 2 }
+  - { id: jkr.double, copies: 2 }
+  - { id: jkr.echo, copies: 2 }

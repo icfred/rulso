@@ -16,8 +16,8 @@ import sys
 from collections.abc import Sequence
 from typing import TextIO
 
-from rulso.bots.random import DiscardRedraw, Pass, PlayCard, choose_action
-from rulso.rules import advance_phase, pass_turn, play_card
+from rulso.bots.random import DiscardRedraw, Pass, PlayCard, PlayJoker, choose_action
+from rulso.rules import advance_phase, pass_turn, play_card, play_joker
 from rulso.rules import start_game as _start_game
 from rulso.state import (
     PLAYER_COUNT,
@@ -175,6 +175,19 @@ def _drive_build_turn(
             action="pass",
         )
         return pass_turn(state)
+    if isinstance(action, PlayJoker):
+        # RUL-45 (J): JOKER attachment — narrate then dispatch via play_joker.
+        card = _find_hand_card(active_player, action.card_id)
+        _emit(
+            out,
+            "turn",
+            round=state.round_number,
+            seat=state.active_seat,
+            player=active_player.id,
+            action="play_joker",
+            card=action.card_id,
+        )
+        return play_joker(state, card)
     raise AssertionError(f"unhandled action variant {type(action).__name__}")
 
 

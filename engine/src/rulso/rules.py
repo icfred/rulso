@@ -52,6 +52,21 @@ from rulso.state import (
 # effects.py — kept local to avoid a back-import; the two are co-evolved.
 _OP_ONLY_COMPARATOR_NAMES: frozenset[str] = frozenset({"LT", "LE", "GT", "GE", "EQ"})
 
+# RUL-45 (J): JOKER variant names per design/cards-inventory.md. Persistence
+# variants promote the rule into ``persistent_rules`` (and skip slot
+# discard); DOUBLE handles its post-dispatch wrapper inside
+# ``effects.resolve_if_rule``; ECHO re-fires next round via WHEN promotion.
+_JOKER_PERSIST_WHEN: str = "JOKER:PERSIST_WHEN"
+_JOKER_PERSIST_WHILE: str = "JOKER:PERSIST_WHILE"
+_JOKER_DOUBLE: str = "JOKER:DOUBLE"
+_JOKER_ECHO: str = "JOKER:ECHO"
+_JOKER_PERSISTENT_VARIANTS: frozenset[str] = frozenset(
+    {_JOKER_PERSIST_WHEN, _JOKER_PERSIST_WHILE, _JOKER_ECHO}
+)
+_JOKER_VARIANTS: frozenset[str] = frozenset(
+    {_JOKER_PERSIST_WHEN, _JOKER_PERSIST_WHILE, _JOKER_DOUBLE, _JOKER_ECHO}
+)
+
 # --- Round-flow placeholder effect card -------------------------------------
 # Round-flow draws an effect card from ``state.effect_deck`` at round_start
 # step 6 in a follow-up Phase 3 ticket. Until then the round reveals this
@@ -242,19 +257,44 @@ def enter_resolve(state: GameState, *, rng: random.Random | None = None) -> Game
         raise ValueError(f"enter_resolve requires phase=RESOLVE, got {state.phase}")
     if state.active_rule is None:
         raise ValueError("enter_resolve called with no active_rule")
-    if state.active_rule.joker_attached is not None:
-        raise NotImplementedError("M2: joker attachment")
+    active_rule = state.active_rule
+    joker = active_rule.joker_attached
+    joker_name = joker.name if joker is not None else None
+    if joker_name is not None and joker_name not in _JOKER_VARIANTS:
+        raise ValueError(f"unknown JOKER variant {joker_name!r} on active_rule")
     # Steps 1-4: render + scope + evaluate + apply effects via the resolver.
     # ADR-0001 labels are computed-not-stored, so the resolver recomputes
     # them from ``state`` when called without an explicit labels mapping.
     # IF-only in M1.5; WHEN/WHILE land with persistent rules (M2) so we
     # guard the call here to keep the path future-safe.
-    if state.active_rule.template is RuleKind.IF:
-        state = effects.resolve_if_rule(state, state.active_rule)
-    # Step 6: persistent rule trigger check (no-op when none active).
+    # JOKER:DOUBLE is honoured inside ``effects.resolve_if_rule`` (it reads
+    # ``rule.joker_attached`` after dispatch and re-applies the same effect).
+    if active_rule.template is RuleKind.IF:
+        state = effects.resolve_if_rule(state, active_rule)
+    # Step 6: persistent rule trigger check (no-op when none active). Runs
+    # BEFORE step 5 so a freshly-added ECHO/PERSIST rule does not satisfy its
+    # own WHEN trigger in the same resolve — that would collapse "echoes next
+    # round" into "fires twice this round". The state.md ordering is preserved
+    # in spirit: only previously-active WHENs see this round's mutations.
     if state.persistent_rules:
         state = persistence.check_when_triggers(state, labels.recompute_labels(state))
-    # Step 5: joker — guarded above (raises NotImplementedError).
+    # Step 5: JOKER attachment (RUL-45). PERSIST_WHEN/PERSIST_WHILE/ECHO
+    # promote the rule into ``persistent_rules`` (per design/state.md step 5)
+    # and lock its fragments out of the round-end discard pile. DOUBLE leaves
+    # no persistent residue — its effect-doubling fired inside resolve_if_rule.
+    persisted_via_joker = False
+    if joker_name in _JOKER_PERSISTENT_VARIANTS:
+        if joker_name == _JOKER_PERSIST_WHEN:
+            kind = RuleKind.WHEN
+        elif joker_name == _JOKER_PERSIST_WHILE:
+            kind = RuleKind.WHILE
+        else:  # _JOKER_ECHO — re-fire next round via the WHEN trigger path.
+            kind = RuleKind.WHEN
+        promoted = active_rule.model_copy(
+            update={"template": kind, "joker_attached": None},
+        )
+        state = persistence.add_persistent_rule(state, promoted, kind)
+        persisted_via_joker = True
     # Step 7: goal claim check (RUL-46) — awards VP per `design/goals-inventory.md`.
     state = goals.check_claims(state)
     # Step 8: label recompute — implicit (computed-not-stored).
@@ -269,8 +309,16 @@ def enter_resolve(state: GameState, *, rng: random.Random | None = None) -> Game
             }
         )
     # Step 10: cleanup — discard played fragments and expire MARKED tokens
-    # (one-round lifetime per RUL-30 / design/state.md).
-    discarded = tuple(s.filled_by for s in state.active_rule.slots if s.filled_by is not None)
+    # (one-round lifetime per RUL-30 / design/state.md). Persisted rules keep
+    # their fragments locked into ``persistent_rules`` (state.md step 10
+    # "except those locked into persistent_rules"); the joker card itself
+    # also stays with the rule, not the discard pile.
+    if persisted_via_joker:
+        discarded = ()
+    else:
+        discarded = tuple(s.filled_by for s in active_rule.slots if s.filled_by is not None)
+        if joker is not None:
+            discarded = discarded + (joker,)
     cleaned_players = tuple(status.tick_resolve_end(p) for p in state.players)
     # Step 11: rotate dealer.
     new_dealer = (state.dealer_seat + 1) % PLAYER_COUNT
@@ -371,6 +419,57 @@ def pass_turn(state: GameState) -> GameState:
     if state.phase is not Phase.BUILD:
         raise ValueError(f"pass_turn requires phase=BUILD, got {state.phase}")
     return _build_tick(state)
+
+
+def play_joker(state: GameState, card: Card) -> GameState:
+    """Active player attaches ``card`` (a JOKER) to the active rule (RUL-45).
+
+    JOKERs do not fill a slot — they bind to the rule as a whole via
+    ``RuleBuilder.joker_attached`` (see ``design/cards-inventory.md`` "JOKER").
+    Validates phase=BUILD, an active rule exists, no joker is already attached
+    (one joker per rule per design/state.md), and ``card.type is JOKER``. The
+    card is removed from the active player's hand by id+identity. Advances the
+    build turn like any other play.
+
+    Resolution semantics (consumed by :func:`enter_resolve` / DOUBLE wrapper
+    in :func:`effects.resolve_if_rule`):
+
+    * ``JOKER:PERSIST_WHEN`` — promote rule to WHEN and lodge in
+      ``persistent_rules`` after this round's effect fires.
+    * ``JOKER:PERSIST_WHILE`` — same, with WHILE.
+    * ``JOKER:DOUBLE`` — dispatched effect runs twice on the matching scope.
+    * ``JOKER:ECHO`` — promote to a one-shot WHEN so the rule re-evaluates at
+      the next resolve's WHEN-trigger check.
+    """
+    if state.phase is not Phase.BUILD:
+        raise ValueError(f"play_joker requires phase=BUILD, got {state.phase}")
+    if state.active_rule is None:
+        raise ValueError("play_joker called with no active_rule")
+    if card.type is not CardType.JOKER:
+        raise ValueError(f"play_joker requires a JOKER card, got type={card.type}")
+    rule = state.active_rule
+    if rule.joker_attached is not None:
+        raise ValueError("active_rule already has a JOKER attached")
+    if card.name not in _JOKER_VARIANTS:
+        raise ValueError(f"unknown JOKER variant {card.name!r}")
+
+    new_rule = rule.model_copy(update={"joker_attached": card})
+    active_player = state.players[state.active_seat]
+    new_play = Play(player_id=active_player.id, card=card, slot="JOKER")
+    new_rule = new_rule.model_copy(update={"plays": rule.plays + (new_play,)})
+    new_hand = _remove_first(active_player.hand, card)
+    new_player = active_player.model_copy(update={"hand": new_hand})
+    new_players = (
+        state.players[: state.active_seat] + (new_player,) + state.players[state.active_seat + 1 :]
+    )
+    return _build_tick(
+        state.model_copy(
+            update={
+                "active_rule": new_rule,
+                "players": new_players,
+            }
+        )
+    )
 
 
 # --- Internals --------------------------------------------------------------
