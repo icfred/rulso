@@ -1,4 +1,4 @@
-_Last updated: 2026-05-10 by orchestrator session_
+_Last updated: 2026-05-10 by orchestrator session — Phase 3 fan dispatched (RUL-39..46, 8 workers)_
 
 # Rulso — orchestrator bootstrap
 
@@ -17,7 +17,29 @@ Linear board: https://linear.app/rulso (team `RUL`, projects: Engine / Infra / B
 
 ## In flight
 
-None. **Phase 3 fan unblocked** — RUL-34 (M1.5 smoke re-contract) merged 2026-05-10. Awaiting user sign-off on Phase 3 ticket shape (D–K, see proposal below) before dispatch.
+**Phase 3 fan dispatched 2026-05-10** — 8 worker hand-overs emitted (RUL-39..46) covering D–K from the proposal below. All `parallel-safe`, all under RUL-24, all in Engine project.
+
+| ID | Phase 3 letter | Title |
+|---|---|---|
+| RUL-39 | D | Effect dispatcher (replace +1 VP stub; registry hook for E/J) |
+| RUL-40 | E | Status apply/decay (new status.py + register effect kinds) |
+| RUL-41 | F | ANYONE / EACH_PLAYER scoping (Card.scope_mode) |
+| RUL-42 | G | Comparator dice (OP-only MODIFIERs per ADR-0002) |
+| RUL-43 | H | Operator MODIFIER fold (BUT/AND/OR/MORE_THAN/AT_LEAST per ADR-0004) |
+| RUL-44 | I | Polymorphic NOUN reads (CARDS/RULES/HITS/GIFTS/ROUNDS/BURN_TOKENS) |
+| RUL-45 | J | JOKER attachment (PERSIST_WHEN/PERSIST_WHILE/DOUBLE/ECHO) |
+| RUL-46 | K | Goal cards engine (claim predicates + start_game seeding + per-round check) |
+
+**Adjustment from STATUS proposal**: D ships a `register_effect_kind` registry hook so E and J attach without serial dependency — all 8 truly parallel.
+
+**Verified before dispatch**: H needs no state.py change (`Slot.modifiers` exists at state.py:139 since RUL-26). K substrate exists at state.py:201..206 since RUL-26.
+
+**Cross-cutting collision flags baked into hand-overs**:
+- `effects.py`: D, E, F, G, H, I, J — section discipline + rebase-on-merge
+- `rules.py.start_game` / round-start: D (effect_deck seed), E (decay tick), K (goal_deck seed + claim hook) — distinct delimited blocks
+- `bots/random.py`: G (dice choice), J (JOKER pick) — additive branches
+- `cards.yaml deck:`: F/G/H/I/J extend distinct sections only; D and K seed from `effect_cards:` / `goal_cards:` (no deck change)
+- `docs/engine/readme.md`: orchestrator-owned
 
 M2 Phase 2 SHIPPED (RUL-31 cards/state.py substrate, RUL-32 WHEN+WHILE lifecycle, RUL-33 GENEROUS+CURSED labels — all merged 2026-05-10). M1.5 smoke re-contract SHIPPED (RUL-34, merged 2026-05-10).
 
