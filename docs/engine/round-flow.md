@@ -1,10 +1,10 @@
-_Last edited: 2026-05-10 by RUL-26_
+_Last edited: 2026-05-10 by RUL-47_
 
 # rules.py — round flow phase machine
 
 Pure-function transitions over `GameState`. Implements `design/state.md` round
-flow. Shop, persistent-rule WHILE tick, joker attachment, and real
-effect-card application are stubbed.
+flow. Shop is stubbed; persistent-rule WHILE tick is wired (no-op when no
+persistent rules); JOKER attachment, effect-card draw + dispatch are wired.
 
 ## Module: `rulso.rules`
 
@@ -13,8 +13,8 @@ effect-card application are stubbed.
 | Function | Returns | Purpose |
 |---|---|---|
 | `start_game(seed=0)` | `GameState` | Init 4 players, deal `HAND_SIZE` per seat from a seeded shuffled deck; `phase=ROUND_START`, `round=0`, `dealer=0` |
-| `advance_phase(state, *, rng=None)` | `GameState` | Advance one logical step from current phase; forwards `rng` to `enter_resolve` |
-| `enter_round_start(state)` | `GameState` | Run round_start steps 1-8 atomically; ends in BUILD or back to ROUND_START on dealer-no-seed |
+| `advance_phase(state, *, rng=None)` | `GameState` | Advance one logical step from current phase; forwards `rng` to both `enter_round_start` and `enter_resolve` |
+| `enter_round_start(state, *, rng=None)` | `GameState` | Run round_start steps 1-8 atomically; ends in BUILD or back to ROUND_START on dealer-no-seed; `rng` recycles `effect_discard` when step-6 draw finds an empty deck |
 | `enter_build(state)` | `GameState` | Set phase=BUILD, active_seat=(dealer+1)%PLAYER_COUNT |
 | `enter_resolve(state, *, rng=None)` | `GameState` | Run resolve steps incl. refill (step 12); ends in ROUND_START or END |
 | `play_card(state, card, slot_name)` | `GameState` | Active player fills a slot; removes card from hand; advances build turn |
@@ -42,13 +42,14 @@ effect-card application are stubbed.
 - After `PLAYER_COUNT` turns: all slots filled → `RESOLVE`; any slot empty → fail-and-rotate.
 - `play_card` removes the played card from the active player's hand by id+identity; raises if not present.
 
-### RNG contract (RUL-18)
+### RNG contract (RUL-18, extended by RUL-47)
 
 | Function | RNG usage |
 |---|---|
 | `start_game(seed)` | `random.Random(seed)` shuffles main deck before dealing; rng consumed and discarded |
+| `enter_round_start(state, *, rng)` | Step 6 draw: shuffles `state.effect_discard` back into `state.effect_deck` when the deck is empty (RUL-47) |
 | `enter_resolve(state, *, rng)` | Step 12 refill: shuffles `state.discard` back into `state.deck` when needed |
-| `advance_phase(state, *, rng)` | Forwards `rng` to `enter_resolve`; other branches don't shuffle |
+| `advance_phase(state, *, rng)` | Forwards `rng` to both `enter_round_start` and `enter_resolve`; other branches don't shuffle |
 
 `rng=None` falls back to a fresh non-deterministic `random.Random()` for the
 refill — adequate when determinism doesn't matter (ad-hoc REPL calls). Tests
@@ -70,14 +71,14 @@ that need it instead.
 
 Determinism: same `seed` ⇒ same hands and same `state.deck`.
 
-### Round-start behaviour (RUL-18)
+### Round-start behaviour (RUL-18, extended by RUL-47)
 
-`enter_round_start(state)`:
+`enter_round_start(state, *, rng=None)`:
 
 1. Steps 2-5 unchanged (BURN tick, label recompute, WHILE guard, shop bypass).
-2. Step 6: reveal effect card (`_M1_EFFECT_CARD` stub; real effect deck is M2).
+2. **Step 6 (RUL-47 wiring)**: pop one card from `state.effect_deck` into `revealed_effect`. When the deck is empty, shuffle `state.effect_discard` back in via `rng` and pop. Both piles empty (only possible mid-game with no current `revealed_effect`) → `revealed_effect = None` (NOOP-equivalent path).
 3. Step 7: draw a CONDITION template via `cards.load_condition_templates()` (M1.5 has one: `cond.if`). The template's `slots` define the active rule's slot defs (`SUBJECT / QUANT / NOUN`); the template's `kind` is the rule template (`IF / WHEN / WHILE`). The hardcoded `_M1_RULE_SLOT_DEFS` and `_M1_DEALER_FRAGMENT` are gone.
-4. Step 7 (cont.): pick the first card in the dealer's hand whose type matches slot 0's type (via `legality.first_card_of_type`). If none, the rule fails immediately: `round_number` ticks (round was attempted), dealer rotates, `active_rule=None`, return to `ROUND_START`.
+4. Step 7 (cont.): pick the first card in the dealer's hand whose type matches slot 0's type (via `legality.first_card_of_type`). If none, the rule fails immediately: `round_number` ticks (round was attempted), dealer rotates, `active_rule=None`, the just-drawn `revealed_effect` is pushed to `effect_discard` (RUL-47 — no card-loss on rule failure per `design/effects-inventory.md`), return to `ROUND_START`.
 5. Step 7 (cont.): otherwise remove the chosen card from the dealer's hand, fill slot 0, record the play, build the `RuleBuilder`, and step 8: transition to BUILD.
 
 ### Resolve behaviour (RUL-18)
@@ -90,7 +91,7 @@ Determinism: same `seed` ⇒ same hands and same `state.deck`.
 4. Step 7: goal claim — M2 stub.
 5. Step 8: label recompute — implicit (computed-not-stored).
 6. Step 9: win check unchanged.
-7. Step 10: discard played fragments unchanged.
+7. **Step 10 (RUL-47 wiring)**: discard played fragments AND push `revealed_effect` onto `effect_discard` (mirrors fragment cleanup so the effect deck stays recyclable). `_fail_rule_and_rotate` does the same on rule-failure paths.
 8. Step 11: rotate dealer unchanged.
 9. **Step 12 (new)**: `_refill_hands` brings every player back up to `HAND_SIZE`. When `state.deck` empties mid-refill, shuffles `state.discard` back into the deck via `rng` and continues. If both deck and discard are empty, that player's hand stays under `HAND_SIZE`.
 10. Step 13: transition to ROUND_START unchanged.
@@ -117,7 +118,6 @@ substrate file (`state.py`, `effects.py`, `labels.py`, `grammar.py`,
 - **Effect application** (`resolve` steps 1-4): wired to `effects.resolve_if_rule` for IF rules. WHEN/WHILE templates raise no error (only IF lands in M1.5's CONDITION deck) but their effects won't apply until M2 persistent rules land.
 - **Goal claim** (`resolve` step 7): no-op; goals deferred.
 - **Win check** (`resolve` step 9): scans `vp >= VP_TO_WIN`; transitions to `END` if found.
-- **Effect card** (`round_start` step 6): `_M1_EFFECT_CARD` stub keeps `revealed_effect` non-None for narration.
 
 ### Tests
 
@@ -147,6 +147,16 @@ Build / resolve / play:
 Refill (RUL-18):
 - `test_refill_replenishes_hands_to_hand_size_after_resolve`
 - `test_refill_shuffles_discard_back_when_deck_empties`
+
+Effect-deck draw / discard (RUL-47):
+- `test_round_start_reveals_real_card_from_seeded_effect_deck`
+- `test_round_start_pop_is_deterministic_under_seed`
+- `test_resolve_appends_consumed_effect_to_effect_discard`
+- `test_failed_rule_pushes_revealed_effect_to_effect_discard`
+- `test_dealer_no_seed_failure_pushes_revealed_effect_to_effect_discard`
+- `test_effect_deck_recycles_when_empty`
+- `test_effect_deck_recycle_is_seed_deterministic`
+- `test_multi_round_game_conserves_effect_card_total`
 
 Misc:
 - `test_dealer_rotates_across_four_rounds_via_failed_rules`

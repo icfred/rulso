@@ -411,3 +411,144 @@ def test_refill_shuffles_discard_back_when_deck_empties() -> None:
     drawn_total = sum(len(p.hand) for p in refilled.players)
     assert drawn_total == 8
     assert refilled.discard == ()
+
+
+# --- RUL-47 additions: effect-deck draw and discard -------------------------
+
+
+def test_round_start_reveals_real_card_from_seeded_effect_deck() -> None:
+    """Step 6 pops the top of ``effect_deck`` into ``revealed_effect`` and the
+    deck shortens by one (no NOOP placeholder)."""
+    state = start_game(seed=0)
+    seeded_effect_deck = state.effect_deck
+    assert len(seeded_effect_deck) > 0  # cards.yaml seeds 12 effect cards.
+    expected_card = seeded_effect_deck[-1]  # _draw_effect_card pops the tail.
+
+    state = _drive_to_first_build(seed=0)
+    assert state.revealed_effect == expected_card
+    assert state.revealed_effect.type is CardType.EFFECT
+    assert len(state.effect_deck) == len(seeded_effect_deck) - 1
+    assert state.effect_discard == ()
+
+
+def test_round_start_pop_is_deterministic_under_seed() -> None:
+    """Same seed ⇒ same revealed_effect at first round_start."""
+    s1 = _drive_to_first_build(seed=42)
+    s2 = _drive_to_first_build(seed=42)
+    assert s1.revealed_effect == s2.revealed_effect
+
+
+def test_resolve_appends_consumed_effect_to_effect_discard() -> None:
+    """Step 10 pushes the round's revealed_effect to effect_discard and clears
+    revealed_effect (mirrors fragment cleanup)."""
+    state = _drive_to_first_build(seed=0)
+    consumed = state.revealed_effect
+    assert consumed is not None
+    state = _override_player_hand(
+        state, 1, (Card(id="quant_le_5", type=CardType.MODIFIER, name="LE:5"),)
+    )
+    state = _override_player_hand(
+        state, 2, (Card(id="noun_chips", type=CardType.NOUN, name="CHIPS"),)
+    )
+    state = _override_player_hand(state, 3, (_card("filler", CardType.NOUN),))
+    state = play_card(state, state.players[1].hand[0], "QUANT")
+    state = play_card(state, state.players[2].hand[0], "NOUN")
+    state = pass_turn(state)
+    state = pass_turn(state)
+    state = enter_resolve(state, rng=random.Random(0))
+    assert state.revealed_effect is None
+    assert consumed in state.effect_discard
+
+
+def test_failed_rule_pushes_revealed_effect_to_effect_discard() -> None:
+    """Build-fail path (slot unfilled after the revolution) discards the
+    revealed_effect rather than losing it."""
+    state = _drive_to_first_build(seed=0)
+    consumed = state.revealed_effect
+    assert consumed is not None
+    # All non-dealer seats forced-pass → unfilled NOUN/QUANT → fail.
+    for seat in (1, 2, 3):
+        state = _override_player_hand(state, seat, ())
+    state = pass_turn(state)
+    state = pass_turn(state)
+    state = pass_turn(state)
+    state = pass_turn(state)
+    assert state.phase is Phase.ROUND_START
+    assert state.revealed_effect is None
+    assert consumed in state.effect_discard
+
+
+def test_dealer_no_seed_failure_pushes_revealed_effect_to_effect_discard() -> None:
+    """Dealer-no-seed path (rule fails before BUILD) also discards the drawn card."""
+    state = start_game(seed=0)
+    seeded_effect_deck = state.effect_deck
+    expected_card = seeded_effect_deck[-1]
+    # Strip every SUBJECT from the dealer to force the no-seed failure path.
+    dealer = state.players[0]
+    no_subject_hand = tuple(c for c in dealer.hand if c.type is not CardType.SUBJECT)
+    state = _override_player_hand(state, 0, no_subject_hand)
+    state = advance_phase(state)
+    assert state.phase is Phase.ROUND_START
+    assert state.revealed_effect is None
+    assert state.effect_discard == (expected_card,)
+    assert len(state.effect_deck) == len(seeded_effect_deck) - 1
+
+
+def test_effect_deck_recycles_when_empty() -> None:
+    """When effect_deck is empty at step 6, effect_discard reshuffles back."""
+    from rulso.rules import _draw_effect_card
+
+    discard = (
+        Card(id="eff.a", type=CardType.EFFECT, name="GAIN_VP:1"),
+        Card(id="eff.b", type=CardType.EFFECT, name="GAIN_CHIPS:5"),
+    )
+    rng = random.Random(0)
+    drawn, deck, new_discard = _draw_effect_card((), discard, rng)
+    assert drawn is not None
+    assert drawn in discard
+    assert new_discard == ()  # all moved into deck before pop.
+    assert len(deck) == 1
+
+
+def test_effect_deck_recycle_is_seed_deterministic() -> None:
+    """Same seed ⇒ same recycle order ⇒ same drawn card."""
+    from rulso.rules import _draw_effect_card
+
+    discard = tuple(
+        Card(id=f"eff.{i}", type=CardType.EFFECT, name=f"GAIN_VP:{i}") for i in range(6)
+    )
+    a = _draw_effect_card((), discard, random.Random(7))
+    b = _draw_effect_card((), discard, random.Random(7))
+    assert a == b
+
+
+def test_effect_deck_recycle_when_both_piles_empty_returns_none() -> None:
+    """Edge case: both piles empty → revealed_effect stays None."""
+    from rulso.rules import _draw_effect_card
+
+    drawn, deck, discard = _draw_effect_card((), (), random.Random(0))
+    assert drawn is None
+    assert deck == ()
+    assert discard == ()
+
+
+def test_multi_round_game_conserves_effect_card_total() -> None:
+    """Across many rounds (some succeed, some fail), the count of cards in
+    effect_deck + effect_discard + (1 if revealed_effect else 0) equals the
+    seeded total. No card is silently lost."""
+    initial = start_game(seed=0)
+    total = len(initial.effect_deck)
+    state = initial
+    for _ in range(20):
+        state = advance_phase(state, rng=random.Random(state.round_number))
+        # Drive any active build to a passed revolution to reach RESOLVE / fail.
+        guard = 0
+        while state.phase is Phase.BUILD and guard < PLAYER_COUNT * 2:
+            state = pass_turn(state)
+            guard += 1
+        if state.phase is Phase.RESOLVE:
+            state = enter_resolve(state, rng=random.Random(state.round_number + 1))
+        if state.phase is Phase.END:
+            break
+        in_play = 1 if state.revealed_effect is not None else 0
+        assert len(state.effect_deck) + len(state.effect_discard) + in_play == total
