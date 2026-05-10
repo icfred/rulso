@@ -106,8 +106,31 @@ def test_live_label_firing_does_not_consume_active_goals() -> None:
 # --- Failed-rule path: no effect, no goal claim, dealer rotates -------------
 
 
+def _override_hand(state: GameState, seat: int, hand: tuple[Card, ...]) -> GameState:
+    new_players = tuple(
+        p.model_copy(update={"hand": hand}) if p.seat == seat else p for p in state.players
+    )
+    return state.model_copy(update={"players": new_players})
+
+
+def _force_dealer_subject_only(state: GameState) -> GameState:
+    """Strip every hand to deterministically force the unfilled-slot fail path.
+
+    Dealer holds exactly one SUBJECT (seeds slot 0). Every other seat is empty
+    so QUANT and NOUN never fill — rule fails on the unfilled-slot branch
+    rather than the dealer-no-seed branch.
+    """
+    seed_card = Card(id="dealer_subj", type=CardType.SUBJECT, name="p0")
+    state = _override_hand(state, state.dealer_seat, (seed_card,))
+    for seat in range(PLAYER_COUNT):
+        if seat != state.dealer_seat:
+            state = _override_hand(state, seat, ())
+    return state
+
+
 def _drive_one_failed_round(state: GameState) -> GameState:
-    """Walk one round to its fail-and-rotate point. Hands are empty → all pass."""
+    """Walk one round to its fail-and-rotate point via the unfilled-slot path."""
+    state = _force_dealer_subject_only(state)
     state = advance_phase(state)  # ROUND_START → BUILD
     assert state.phase.value == "build"
     for _ in range(PLAYER_COUNT):
@@ -154,16 +177,14 @@ def test_failed_rule_via_play_card_partial_fill_still_no_effect() -> None:
     delta lands on any player.
     """
     state = start_game()
-    # Inject a NOUN card for seat 1 only — modifier and noun_2 stay unfilled.
+    # Force dealer-with-SUBJECT + seat 1 with one NOUN; QUANT slot stays open.
+    state = _force_dealer_subject_only(state)
     seat1_hand = (Card(id="held_noun", type=CardType.NOUN, name="held_noun"),)
-    new_players = tuple(
-        p.model_copy(update={"hand": seat1_hand}) if p.seat == 1 else p for p in state.players
-    )
-    state = state.model_copy(update={"players": new_players})
+    state = _override_hand(state, 1, seat1_hand)
 
     chips_before = tuple(p.chips for p in state.players)
     state = advance_phase(state)  # → BUILD
-    state = play_card(state, seat1_hand[0], "noun")
+    state = play_card(state, seat1_hand[0], "NOUN")
     state = pass_turn(state)  # seat 2
     state = pass_turn(state)  # seat 3
     state = pass_turn(state)  # dealer closes revolution

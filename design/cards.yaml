@@ -15,9 +15,10 @@
 #
 #   subject_cards:    # SUBJECT cards — fill the SUBJECT slot.
 #     - { id: <stable id>, name: <render token> }
-#       # name conventions:
-#       #   literal seats:  seat_0 .. seat_3   (matches Player.id once RUL-18 aligns)
-#       #   labels:         LEADER, WOUNDED    (matched by effects._scope_subject)
+#       # name conventions (RUL-18 alignment):
+#       #   literal seats:  p0 .. p3          (matches Player.id from rules.start_game)
+#       #   labels:         "THE LEADER", "THE WOUNDED"
+#       #                   (matches keys in labels.LABEL_NAMES per ADR-0001)
 #
 #   noun_cards:       # NOUN cards — fill the NOUN slot.
 #     - { id: <stable id>, name: <render token: CHIPS | VP> }
@@ -42,12 +43,12 @@ condition_cards:
       - { name: NOUN, type: NOUN }
 
 subject_cards:
-  - { id: subj.seat_0, name: seat_0 }
-  - { id: subj.seat_1, name: seat_1 }
-  - { id: subj.seat_2, name: seat_2 }
-  - { id: subj.seat_3, name: seat_3 }
-  - { id: subj.leader, name: LEADER }
-  - { id: subj.wounded, name: WOUNDED }
+  - { id: subj.p0, name: p0 }
+  - { id: subj.p1, name: p1 }
+  - { id: subj.p2, name: p2 }
+  - { id: subj.p3, name: p3 }
+  - { id: subj.leader, name: "THE LEADER" }
+  - { id: subj.wounded, name: "THE WOUNDED" }
 
 noun_cards:
   - { id: noun.chips, name: CHIPS }
@@ -73,10 +74,10 @@ modifier_cards:
 
 deck:
   # SUBJECT — 18 physical (6 kinds × 3 copies)
-  - { id: subj.seat_0, copies: 3 }
-  - { id: subj.seat_1, copies: 3 }
-  - { id: subj.seat_2, copies: 3 }
-  - { id: subj.seat_3, copies: 3 }
+  - { id: subj.p0, copies: 3 }
+  - { id: subj.p1, copies: 3 }
+  - { id: subj.p2, copies: 3 }
+  - { id: subj.p3, copies: 3 }
   - { id: subj.leader, copies: 3 }
   - { id: subj.wounded, copies: 3 }
   # NOUN — 8 physical (2 kinds × 4 copies)

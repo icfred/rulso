@@ -1,10 +1,10 @@
-_Last edited: 2026-05-09 by RUL-8_
+_Last edited: 2026-05-10 by RUL-18_
 
 # rules.py — round flow phase machine
 
 Pure-function transitions over `GameState`. Implements `design/state.md` round
-flow for M1. Shop, persistent-rule WHILE tick, joker attachment, and effect
-application are stubbed.
+flow. Shop, persistent-rule WHILE tick, joker attachment, and real
+effect-card application are stubbed.
 
 ## Module: `rulso.rules`
 
@@ -12,24 +12,24 @@ application are stubbed.
 
 | Function | Returns | Purpose |
 |---|---|---|
-| `start_game(seed=0)` | `GameState` | Init 4 players, dealer=0, phase=ROUND_START, round=0 |
-| `advance_phase(state)` | `GameState` | Advance one logical step from current phase |
-| `enter_round_start(state)` | `GameState` | Run round_start steps 1-8 atomically; ends in BUILD |
+| `start_game(seed=0)` | `GameState` | Init 4 players, deal `HAND_SIZE` per seat from a seeded shuffled deck; `phase=ROUND_START`, `round=0`, `dealer=0` |
+| `advance_phase(state, *, rng=None)` | `GameState` | Advance one logical step from current phase; forwards `rng` to `enter_resolve` |
+| `enter_round_start(state)` | `GameState` | Run round_start steps 1-8 atomically; ends in BUILD or back to ROUND_START on dealer-no-seed |
 | `enter_build(state)` | `GameState` | Set phase=BUILD, active_seat=(dealer+1)%PLAYER_COUNT |
-| `enter_resolve(state)` | `GameState` | Run resolve steps; ends in ROUND_START or END |
-| `play_card(state, card, slot_name)` | `GameState` | Active player fills a slot; advances build turn |
+| `enter_resolve(state, *, rng=None)` | `GameState` | Run resolve steps incl. refill (step 12); ends in ROUND_START or END |
+| `play_card(state, card, slot_name)` | `GameState` | Active player fills a slot; removes card from hand; advances build turn |
 | `pass_turn(state)` | `GameState` | Active player passes; advances build turn |
 
 ### `advance_phase` dispatch
 
 | Current `state.phase` | Behaviour |
 |---|---|
-| `LOBBY` | calls `enter_round_start` → ends in `BUILD` |
-| `ROUND_START` | calls `enter_round_start` → ends in `BUILD` |
+| `LOBBY` | calls `enter_round_start` → ends in `BUILD` (or back to `ROUND_START` if dealer holds no seed-card) |
+| `ROUND_START` | calls `enter_round_start` → ends in `BUILD` (or back to `ROUND_START` if dealer holds no seed-card) |
 | `BUILD` (mid-revolution) | forced-pass tick; `active_seat` advances |
 | `BUILD` (revolution complete, all slots filled) | → `RESOLVE` |
 | `BUILD` (revolution complete, slot unfilled) | rule fails: dealer rotates → `ROUND_START` |
-| `RESOLVE` | calls `enter_resolve` → `ROUND_START` (or `END` on win) |
+| `RESOLVE` | calls `enter_resolve(state, rng=...)` → `ROUND_START` (or `END` on win) |
 | `SHOP` | raises `NotImplementedError("M2: shop phase")` |
 | `END` | returns input unchanged |
 
@@ -40,52 +40,113 @@ application are stubbed.
 - Dealer plays template + slot 0 in `round_start` AND takes the final build turn.
 - Each `play_card` / `pass_turn` increments `build_turns_taken` and rotates `active_seat`.
 - After `PLAYER_COUNT` turns: all slots filled → `RESOLVE`; any slot empty → fail-and-rotate.
+- `play_card` removes the played card from the active player's hand by id+identity; raises if not present.
 
-### M1 stubs
+### RNG contract (RUL-18)
 
-- **Shop check** (`round_start` step 5): bypassed. `SHOP_INTERVAL` trigger ignored so M1 plays without entering shop. `enter_shop` not implemented.
+| Function | RNG usage |
+|---|---|
+| `start_game(seed)` | `random.Random(seed)` shuffles main deck before dealing; rng consumed and discarded |
+| `enter_resolve(state, *, rng)` | Step 12 refill: shuffles `state.discard` back into `state.deck` when needed |
+| `advance_phase(state, *, rng)` | Forwards `rng` to `enter_resolve`; other branches don't shuffle |
+
+`rng=None` falls back to a fresh non-deterministic `random.Random()` for the
+refill — adequate when determinism doesn't matter (ad-hoc REPL calls). Tests
+and CLI pass an explicit `random.Random(seed_variant)` for reproducibility.
+
+The seed is intentionally NOT carried on `GameState` (substrate stays
+additive-only and frozen); the rng threads through the public entry points
+that need it instead.
+
+### Deal-time behaviour (RUL-18)
+
+`start_game(seed)`:
+
+1. Loads main deck via `cards.build_default_deck()` (50 cards in M1.5).
+2. Shuffles the deck list with `random.Random(seed)`.
+3. Deals `HAND_SIZE` cards to each of `PLAYER_COUNT` players in seat order.
+4. Parks the remainder in `state.deck` (50 - 4×7 = 22 cards).
+5. Returns `phase=ROUND_START`, `round_number=0`, `dealer_seat=0`.
+
+Determinism: same `seed` ⇒ same hands and same `state.deck`.
+
+### Round-start behaviour (RUL-18)
+
+`enter_round_start(state)`:
+
+1. Steps 2-5 unchanged (BURN tick, label recompute, WHILE guard, shop bypass).
+2. Step 6: reveal effect card (`_M1_EFFECT_CARD` stub; real effect deck is M2).
+3. Step 7: draw a CONDITION template via `cards.load_condition_templates()` (M1.5 has one: `cond.if`). The template's `slots` define the active rule's slot defs (`SUBJECT / QUANT / NOUN`); the template's `kind` is the rule template (`IF / WHEN / WHILE`). The hardcoded `_M1_RULE_SLOT_DEFS` and `_M1_DEALER_FRAGMENT` are gone.
+4. Step 7 (cont.): pick the first card in the dealer's hand whose type matches slot 0's type (via `legality.first_card_of_type`). If none, the rule fails immediately: `round_number` ticks (round was attempted), dealer rotates, `active_rule=None`, return to `ROUND_START`.
+5. Step 7 (cont.): otherwise remove the chosen card from the dealer's hand, fill slot 0, record the play, build the `RuleBuilder`, and step 8: transition to BUILD.
+
+### Resolve behaviour (RUL-18)
+
+`enter_resolve(state, *, rng=None)`:
+
+1. **Steps 1-4 (new wiring)**: `effects.resolve_if_rule(state, state.active_rule)` renders the rule, scopes SUBJECT (label-aware per ADR-0001), evaluates `HAS [QUANT] [NOUN]` per scoped player, and applies the M1.5 stub effect (+1 VP per match). IF-only in M1.5; WHEN/WHILE land with persistent rules (M2).
+2. Steps 5-7: joker (guarded), persistent trigger, goal claim — M2 stubs.
+3. Step 8: label recompute — implicit (computed-not-stored).
+4. Step 9: win check unchanged.
+5. Step 10: discard played fragments unchanged.
+6. Step 11: rotate dealer unchanged.
+7. **Step 12 (new)**: `_refill_hands` brings every player back up to `HAND_SIZE`. When `state.deck` empties mid-refill, shuffles `state.discard` back into the deck via `rng` and continues. If both deck and discard are empty, that player's hand stays under `HAND_SIZE`.
+8. Step 13: transition to ROUND_START unchanged.
+
+### Substrate naming reconciliation (RUL-18)
+
+Two divergences between `cards.yaml` and the runtime engine were resolved at
+the data layer:
+
+| Card name (was) | Card name (now) | Reason |
+|---|---|---|
+| SUBJECT `seat_0..seat_3` | `p0..p3` | Match `Player.id` from `start_game` so `effects._scope_subject` matches without a translation step |
+| SUBJECT `LEADER` / `WOUNDED` | `THE LEADER` / `THE WOUNDED` | Match keys in `labels.LABEL_NAMES` per ADR-0001 |
+
+`cards.yaml` ids tracked the rename too (`subj.seat_0` → `subj.p0`). No
+substrate file (`state.py`, `effects.py`, `labels.py`, `grammar.py`,
+`cards.py`) was edited.
+
+### M1 stubs that survive
+
+- **Shop check** (`round_start` step 5): bypassed.
 - **WHILE-rule tick** (`round_start` step 4): raises `NotImplementedError("M2: persistent rule WHILE tick")` if `state.persistent_rules` is non-empty. M1 never adds persistent rules.
 - **JOKER attachment** (`resolve` step 5): raises `NotImplementedError("M2: joker attachment")` if `active_rule.joker_attached` is set. M1 never attaches.
-- **Effect application** (`resolve` steps 1-7): no-op; rule render, scope, and effects deferred.
-- **Hand refill** (`build` step 4, `resolve` step 12): no-op; deck is empty in M1.
-- **Label recompute** (`round_start` step 3): calls `labels.recompute_labels` (live for LEADER/WOUNDED per M1.5). Result is currently unconsumed — `effects._scope_subject` still returns `frozenset()` for label SUBJECTs; wiring tracked separately. `resolve` step 8 still uncalled.
+- **Effect application** (`resolve` steps 1-4): wired to `effects.resolve_if_rule` for IF rules. WHEN/WHILE templates raise no error (only IF lands in M1.5's CONDITION deck) but their effects won't apply until M2 persistent rules land.
 - **Goal claim** (`resolve` step 7): no-op; goals deferred.
 - **Win check** (`resolve` step 9): scans `vp >= VP_TO_WIN`; transitions to `END` if found.
-- **Card legality / hand membership** in `play_card`: not checked. Only slot type-match enforced.
-
-### M1 stub rule shape
-
-`_M1_RULE_SLOT_DEFS` defines a 4-slot rule:
-
-| Index | Slot name | Type |
-|---|---|---|
-| 0 | `subject` | `SUBJECT` (filled by dealer in round_start) |
-| 1 | `noun` | `NOUN` |
-| 2 | `modifier` | `MODIFIER` |
-| 3 | `noun_2` | `NOUN` |
-
-`_M1_DEALER_FRAGMENT` (SUBJECT card "ANYONE") and `_M1_EFFECT_CARD` are
-synthetic placeholders until `cards.yaml` lands.
-
-### State.py additions (RUL-8)
-
-Additive only:
-
-- `GameState.build_turns_taken: int = 0` — turn counter inside BUILD.
-- `GameState.revealed_effect: Card | None = None` — face-up effect card during a round.
+- **Effect card** (`round_start` step 6): `_M1_EFFECT_CARD` stub keeps `revealed_effect` non-None for narration.
 
 ### Tests
 
-`engine/tests/test_round_flow.py`:
+`engine/tests/test_round_flow.py` (refreshed for RUL-18):
 
-- `test_start_game_initializes_round_start_at_round_zero`
+Deal / determinism:
+- `test_start_game_deals_full_hands_per_seat`
+- `test_start_game_is_deterministic_under_same_seed`
+- `test_start_game_differs_across_seeds`
+- `test_start_game_uses_no_cards_outside_main_deck`
+
+Round-start:
 - `test_advance_from_round_start_enters_build_with_dealer_first_slot_filled`
+- `test_round_start_slot_defs_match_condition_template`
+- `test_dealer_first_slot_card_came_from_dealer_hand`
+- `test_round_start_fails_immediately_when_dealer_has_no_seed_card`
+
+Build / resolve / play:
 - `test_play_card_fills_slot_and_advances_active_seat`
+- `test_play_card_removes_card_from_active_player_hand`
 - `test_play_card_rejects_type_mismatch` / `_filled_slot` / `_unknown_slot` / `_outside_build`
 - `test_build_with_all_slots_filled_transitions_to_resolve`
 - `test_build_with_unfilled_slot_fails_back_to_round_start`
 - `test_resolve_transitions_to_round_start_and_rotates_dealer`
 - `test_advance_phase_from_resolve_invokes_enter_resolve`
+
+Refill (RUL-18):
+- `test_refill_replenishes_hands_to_hand_size_after_resolve`
+- `test_refill_shuffles_discard_back_when_deck_empties`
+
+Misc:
 - `test_dealer_rotates_across_four_rounds_via_failed_rules`
 - `test_advance_from_lobby_enters_round_start`
 - `test_advance_from_shop_raises_not_implemented`
