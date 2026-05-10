@@ -34,6 +34,16 @@ from rulso.state import (
 
 # --- Helpers -----------------------------------------------------------------
 
+# RUL-23 cross-cutting fix: D's dispatcher (cab742e) routes IF resolution
+# through ``revealed_effect``; the +1 VP path now requires the canonical
+# ``GAIN_VP:1`` effect card pinned on every test ``GameState``.
+_GAIN_VP_1 = Card(id="eff.vp.gain.1", type=CardType.EFFECT, name="GAIN_VP:1")
+
+
+def _state(**kwargs: object) -> GameState:
+    kwargs.setdefault("revealed_effect", _GAIN_VP_1)
+    return GameState(**kwargs)  # type: ignore[arg-type]
+
 
 def _subject(name: str) -> Card:
     return Card(id=f"sub_{name.lower().replace(' ', '_')}", type=CardType.SUBJECT, name=name)
@@ -79,7 +89,7 @@ def _persistent_if(created_by: str) -> PersistentRule:
 
 def test_noun_cards_reads_hand_length() -> None:
     p0 = Player(id="p0", seat=0, hand=(_hand_card(0), _hand_card(1), _hand_card(2)))
-    state = GameState(players=(p0,))
+    state = _state(players=(p0,))
     rule = _if_rule(_subject("p0"), _quant("EQ", 3), _noun("CARDS"))
     assert resolve_if_rule(state, rule).players[0].vp == 1
 
@@ -87,7 +97,7 @@ def test_noun_cards_reads_hand_length() -> None:
 def test_noun_cards_empty_hand_reads_zero() -> None:
     """Empty hand → CARDS=0; comparator boundary at 0 must fire on EQ:0."""
     p0 = Player(id="p0", seat=0, hand=())
-    state = GameState(players=(p0,))
+    state = _state(players=(p0,))
     eq_zero = _if_rule(_subject("p0"), _quant("EQ", 0), _noun("CARDS"))
     assert resolve_if_rule(state, eq_zero).players[0].vp == 1
     gt_zero = _if_rule(_subject("p0"), _quant("GT", 0), _noun("CARDS"))
@@ -96,7 +106,7 @@ def test_noun_cards_empty_hand_reads_zero() -> None:
 
 def test_noun_cards_comparators_truthy_and_falsy() -> None:
     p0 = Player(id="p0", seat=0, hand=(_hand_card(0), _hand_card(1)))
-    state = GameState(players=(p0,))
+    state = _state(players=(p0,))
     # 2 cards: GE:2 fires; LT:2 doesn't; LT:5 does.
     assert (
         resolve_if_rule(state, _if_rule(_subject("p0"), _quant("GE", 2), _noun("CARDS")))
@@ -121,7 +131,7 @@ def test_noun_cards_comparators_truthy_and_falsy() -> None:
 def test_noun_rules_counts_created_by_player() -> None:
     p0 = Player(id="p0", seat=0)
     p1 = Player(id="p1", seat=1)
-    state = GameState(
+    state = _state(
         players=(p0, p1),
         persistent_rules=(
             _persistent_if("p0"),
@@ -139,7 +149,7 @@ def test_noun_rules_counts_created_by_player() -> None:
 
 def test_noun_rules_no_persistent_rules_reads_zero() -> None:
     p0 = Player(id="p0", seat=0)
-    state = GameState(players=(p0,), persistent_rules=())
+    state = _state(players=(p0,), persistent_rules=())
     assert (
         resolve_if_rule(state, _if_rule(_subject("p0"), _quant("EQ", 0), _noun("RULES")))
         .players[0]
@@ -167,7 +177,7 @@ def test_noun_hits_reads_history_field() -> None:
         seat=0,
         history=PlayerHistory(hits_taken_this_game=4),
     )
-    state = GameState(players=(p0,))
+    state = _state(players=(p0,))
     assert (
         resolve_if_rule(state, _if_rule(_subject("p0"), _quant("EQ", 4), _noun("HITS")))
         .players[0]
@@ -179,7 +189,7 @@ def test_noun_hits_reads_history_field() -> None:
 
 def test_noun_hits_default_zero() -> None:
     p0 = Player(id="p0", seat=0)
-    state = GameState(players=(p0,))
+    state = _state(players=(p0,))
     assert (
         resolve_if_rule(state, _if_rule(_subject("p0"), _quant("EQ", 0), _noun("HITS")))
         .players[0]
@@ -197,7 +207,7 @@ def test_noun_gifts_reads_history_field() -> None:
         seat=0,
         history=PlayerHistory(cards_given_this_game=3),
     )
-    state = GameState(players=(p0,))
+    state = _state(players=(p0,))
     assert (
         resolve_if_rule(state, _if_rule(_subject("p0"), _quant("GE", 3), _noun("GIFTS")))
         .players[0]
@@ -211,7 +221,7 @@ def test_noun_gifts_reads_history_field() -> None:
 
 def test_noun_gifts_default_zero() -> None:
     p0 = Player(id="p0", seat=0)
-    state = GameState(players=(p0,))
+    state = _state(players=(p0,))
     assert (
         resolve_if_rule(state, _if_rule(_subject("p0"), _quant("EQ", 0), _noun("GIFTS")))
         .players[0]
@@ -225,7 +235,7 @@ def test_noun_gifts_default_zero() -> None:
 
 def test_noun_rounds_reads_state_round_number() -> None:
     p0 = Player(id="p0", seat=0)
-    state = GameState(players=(p0,), round_number=7)
+    state = _state(players=(p0,), round_number=7)
     assert (
         resolve_if_rule(state, _if_rule(_subject("p0"), _quant("EQ", 7), _noun("ROUNDS")))
         .players[0]
@@ -240,7 +250,7 @@ def test_noun_rounds_reads_state_round_number() -> None:
 def test_noun_rounds_round_one_edge() -> None:
     """Inventory edge: round 1 reads as 1 (not 0)."""
     p0 = Player(id="p0", seat=0)
-    state = GameState(players=(p0,), round_number=1)
+    state = _state(players=(p0,), round_number=1)
     assert (
         resolve_if_rule(state, _if_rule(_subject("p0"), _quant("EQ", 1), _noun("ROUNDS")))
         .players[0]
@@ -253,7 +263,7 @@ def test_noun_rounds_is_player_agnostic() -> None:
     """Every player sees the same round number — confirms broadcast read."""
     p0 = Player(id="p0", seat=0, vp=0)
     p1 = Player(id="p1", seat=1, vp=0)
-    state = GameState(players=(p0, p1), round_number=5)
+    state = _state(players=(p0, p1), round_number=5)
     rule_p0 = _if_rule(_subject("p0"), _quant("EQ", 5), _noun("ROUNDS"))
     rule_p1 = _if_rule(_subject("p1"), _quant("EQ", 5), _noun("ROUNDS"))
     assert resolve_if_rule(state, rule_p0).players[0].vp == 1
@@ -265,7 +275,7 @@ def test_noun_rounds_is_player_agnostic() -> None:
 
 def test_noun_burn_tokens_reads_status_burn() -> None:
     p0 = Player(id="p0", seat=0, status=PlayerStatus(burn=2))
-    state = GameState(players=(p0,))
+    state = _state(players=(p0,))
     assert (
         resolve_if_rule(state, _if_rule(_subject("p0"), _quant("GE", 2), _noun("BURN_TOKENS")))
         .players[0]
@@ -280,7 +290,7 @@ def test_noun_burn_tokens_reads_status_burn() -> None:
 
 def test_noun_burn_tokens_default_zero() -> None:
     p0 = Player(id="p0", seat=0)
-    state = GameState(players=(p0,))
+    state = _state(players=(p0,))
     assert (
         resolve_if_rule(state, _if_rule(_subject("p0"), _quant("EQ", 0), _noun("BURN_TOKENS")))
         .players[0]
@@ -306,7 +316,7 @@ def test_each_m2_noun_reads_distinct_fields() -> None:
         status=PlayerStatus(burn=5),
         history=PlayerHistory(hits_taken_this_game=4, cards_given_this_game=2),
     )
-    state = GameState(
+    state = _state(
         players=(p0,),
         round_number=7,
         persistent_rules=(_persistent_if("p0"),),
