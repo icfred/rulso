@@ -1,4 +1,4 @@
-_Last updated: 2026-05-10 by orchestrator session — RUL-35 SHIPPED (Wave 3 gate, M2 watchable smoke at 5/10 deterministic floor); RUL-55 filed for Phase 3.5 polish (winner-emergence push); RUL-51 SHOP + RUL-53 docs + RUL-55 polish ready for Wave 4 fan_
+_Last updated: 2026-05-10 by orchestrator session — Wave 4 SHIPPED (RUL-51 SHOP + RUL-53 bots-docs + RUL-55 polish); **M2 CLOSED** (RUL-24 → Done). Main at 468 tests, ruff clean, deterministic 7/10 winner floor. Follow-ups: RUL-56 (SHOP content) + RUL-57 (bots.md dice-mode drift). Next gate: M3 ISMCTS scoping_
 
 # Rulso — orchestrator bootstrap
 
@@ -12,20 +12,44 @@ Linear board: https://linear.app/rulso (team `RUL`, projects: Engine / Infra / B
 |---|---|---|---|
 | RUL-5 | M1: Engine core | 4-bot CLI game runs end-to-end, IF rules resolve, state machine sound | **Done** |
 | RUL-15 | M1.5: Watchable engine | First moment the game is *real* | **Done** (closed 2026-05-10) |
-| RUL-24 | M2: Full card set | Every card type and mechanic from cards.yaml works | Phase 1 + Phase 2 + Phase 3 fan + Wave 1 + Wave 2 + Wave 3 (RUL-35) SHIPPED. Wave 4 (RUL-51 SHOP + RUL-53 docs + RUL-55 polish) ready to dispatch. RUL-51 closes M2. |
+| RUL-24 | M2: Full card set | Every card type and mechanic from cards.yaml works | **Done** (closed 2026-05-10) — Phase 1 + Phase 2 + Phase 3 fan + Waves 1–4 all SHIPPED. Follow-ups RUL-56 (SHOP content) + RUL-57 (bots.md drift) tracked under backlog. |
 | RUL-23 | Meta — orchestrator-authored cross-cutting commits | Permanent home for orchestrator commits | Permanent In Progress |
 
 ## In flight
 
-**Nothing in flight.** RUL-35 (M2 watchable smoke) merged. Main: **455 tests passing** (429 existing + 26 new from RUL-35), ruff clean. M2 substrate is now gated: deterministic 5/10 winners across seeds 0..9 at rounds=200, full lifecycle coverage (WHEN/WHILE/goal/effect) via test-side wrapper instrumentation. README "Try it" demo seed switched to `--seed 5 --rounds 100` (winner in 14 rounds; surfaces ANYONE / EACH_PLAYER / THE LEADER / THE WOUNDED / OP-only comparator dice / goal-claim path). Wave 4 ready to dispatch.
+**Nothing in flight. M2 is closed.** Wave 4 fan all merged: RUL-51 (SHOP phase substrate, PR #55), RUL-53 (bots.md refresh for Phase 3 + Wave 2, PR #54), RUL-55 (Phase 3.5 polish: PLAY_BIAS 0.85 → 0.75, PR #56). Main: **468 tests passing** (455 + 13 new from RUL-51), ruff clean. Deterministic M2 watchable smoke now lands 7/10 winners (seeds 0/1/3/4/5/7/9 win; 2/6/8 cap-hit). SHOP cadence/ordering substrate is live but `shop_cards:` is empty — SHOP doesn't fire in CLI play yet; content lands via RUL-56.
 
-### RUL-35 ship summary (2026-05-10, PR #52)
+### Wave 4 ship summary (2026-05-10, PRs #54/#55/#56)
+
+| ID | PR | Notes |
+|---|---|---|
+| RUL-53 | #54 | `docs/engine/bots.md` refresh: PlayJoker section + JOKER variant table (PERSIST_WHEN/WHILE/DOUBLE/ECHO), operator-MODIFIER skip rules inline, `enumerate_legal_actions` public-helper section, `bots.human.select_action` section. Doc-only. Out-of-scope drift flagged → RUL-57. |
+| RUL-51 | #55 | Real `Phase.SHOP` handler replacing `NotImplementedError`. Additive `ShopOffer` model + `shop_pool` / `shop_offer` / `shop_discard` fields on `GameState`; cadence `round_number % SHOP_INTERVAL == 0`; buy order `(vp asc, chips asc, seat asc)` per `design/state.md` (overrode hand-over's stale "Player.id" tie-break — canonical source wins); recycle-on-empty pool follows the RUL-54 disjoint-rng pattern (`ValueError` if `rng=None` on the recycle path). 13 new tests in `test_shop.py`; one existing test edited (`test_advance_from_shop_raises_not_implemented` → `…with_empty_offer_resumes_round_start`). `cards.yaml shop_cards:` ships empty — SHOP short-circuits in CLI; smoke output byte-for-byte unchanged. Content TBD in RUL-56. |
+| RUL-55 | #56 | Lever A only: `PLAY_BIAS = 0.85 → 0.75` in `bots/random.py`. Deterministic baseline lifts 5/10 → 7/10 (seeds 0/1/3/4/5/7/9 win; 2/6/8 cap-hit); stable at rounds=300. `_MIN_WINNERS` raised 5 → 7 (no slack); `docs/engine/m2-smoke.md` baseline + rationale + stop-conditions all re-anchored to 7/10. Lever B (deck rebalance) probed and rejected — every config hitting ≥7/10 reshuffles seed-0 deals and breaks `test_cards_loader`, `test_determinism.test_recycle_path`, `test_jokers.test_full_game_round_trip_with_persistent_when_joker` via the goal-pool shuffle cascade. Rebased onto post-RUL-51 main; full suite (468 tests) re-verified before merge. |
+
+**Cross-cutting fixes landed via this RUL-23 sweep**:
+- `docs/engine/readme.md`: row added for `test_shop.py`; `cards.py`, `rules.py`, `bots/random.py`, `test_m2_watchable.py` description rows refreshed for Wave 4 wiring (SHOP loader, SHOP phase handler, `select_purchase`, `PLAY_BIAS = 0.75`, 7/10 winner floor). `_Last edited:` bumped to Wave 4.
+- `STATUS.md`: re-anchored to post-M2-close state; M2 milestone marked Done; RUL-56/RUL-57 follow-ups registered.
+- `docs/workflow_lessons.md`: new entry 2026-05-10 — deck-composition fragility beyond `_drive_to_first_build` (goal-pool shuffle cascade breaks `test_cards_loader` + `test_jokers.test_full_game_round_trip_with_persistent_when_joker` + `test_determinism.test_recycle_path` when the deck reshuffles). Companion to the existing "deck-size fragility in test helpers" lesson from RUL-31 — the fragility is wider than tests-that-use-`_drive_to_first_build`.
+
+**Worker hand-back flags addressed**:
+- RUL-51: hand-over said tie-break by `Player.id`; canonical `design/state.md` says VP → chips → seat. Worker correctly followed state.md. **Decision**: keep state.md as the source of truth; the hand-over template was wrong. No ADR needed.
+- RUL-51: `shop_cards:` empty in `cards.yaml` — followed the minimal-stub path. Content + payload-type ADR deferred to RUL-56.
+- RUL-53: `bots.md` PlayCard rules still claim all comparator MODIFIERs enumerate both dice modes; RUL-42 changed LT/LE/GT/GE/EQ to default 2d6 only. **Filed RUL-57** as a sibling docs follow-up.
+- RUL-55: hand-over referenced `engine/data/cards.yaml`; actual path is `design/cards.yaml`. **Memory rule saved** (`feedback_cards_yaml_path.md`) so future hand-overs cite the correct path.
+
+**Outstanding follow-ups**:
+- RUL-56: SHOP content (populate `shop_cards:` + payload-type ADR) — **Backlog**, depends on a payload-semantics decision; not blocked but probably waits for M3 playtest signal.
+- RUL-57: `bots.md` dice-mode drift — **Backlog**, parallel-safe docs chore.
+- RUL-35: M2 watchable smoke — **DONE 2026-05-10 (PR #52)**.
+- RUL-51 / RUL-53 / RUL-55: Wave 4 — **DONE 2026-05-10**.
+
+### RUL-35 ship summary (2026-05-10, PR #52, recap)
 
 - **Test-side instrumentation** (no production-module edits): module-scoped fixture wraps `effects.resolve_if_rule`, `persistence.check_when_triggers`, `persistence.tick_while_rules`, `goals.check_claims` as pure observers; restored in `try/finally`. 42/42 green in same pytest session as M1.5 + determinism — no leakage.
-- **Empirical baseline pinned**: 5/10 winners (seeds 1/2/3/5/7 win; 0/4/6/8/9 cap-hit at `dealer_no_seed_card` 175–188× per game). Probed at rounds=300; same 5/10 — bimodal split is substrate-driven, not budget-driven.
-- **Lifecycle floors** at sweep-aggregate ≥1 (observed counts: 843 WHEN, 1992 WHILE, 28 goal-VP, 235 chip-delta) — 25×–1000× the floor; trivially regression-detective without becoming brittle as bots/deck evolve.
-- **Worker flag (`tick_while_rules_changed_state == 0` for every seed)**: WHILE rules ARE in `persistent_rules` and being ticked (1574 calls across the sweep) but `_try_fire_persistent_rule` outputs equal-state because SUBJECT scope is empty on every tick. This is correct behaviour given current bots; downstream of dealer-finds-SUBJECT, addressed by RUL-55 polish.
-- **README cwd form preserved**: `uv run --project engine rulso …` per the README cwd-context lesson.
+- **Empirical baseline pinned**: 5/10 winners → **lifted to 7/10 by RUL-55** (PLAY_BIAS 0.85 → 0.75).
+- **Lifecycle floors** at sweep-aggregate ≥1 (observed counts: 843 WHEN, 1992 WHILE, 28 goal-VP, 235 chip-delta).
+- **README cwd form preserved**: `uv run --project engine rulso …`.
 
 ### RUL-54 substrate fix (2026-05-10, PR #50, recap)
 
@@ -41,12 +65,8 @@ RUL-54 fixed all three sites: shape (b) — `rng=None` tolerated when the reshuf
 - **Wave 2 (DONE 2026-05-10)**: RUL-49 (BLESSED chip-loss + BURN tick; PR #46) + RUL-52 (CLI human-seat; PR #47). Behavioural-substrate cascade contained in PR #46 (single fixture amended in-PR with explanatory comment; 8 new tests cover the BLESSED+chip-loss matrix). UI/driver work in PR #47 was strictly additive (kw-only `human_seat=None` defaults; existing CLI smoke tests passed unchanged). RUL-23 sweep: this PR.
 - **RUL-54 (substrate fix, DONE 2026-05-10)**: PR #50. Thread `effect_rng` through CLI → `enter_round_start`; eliminate `rng or random.Random()` fallbacks at three sites (now raise `ValueError` at the reshuffle path). Disjoint stream `seed ^ 0xEFFC`. New `test_determinism.py` exercises post-round-13 invariants. Unblocked RUL-35.
 - **Wave 3 (gate, solo) — DONE 2026-05-10**: RUL-35 — M2 watchable smoke (PR #52). Landed at the hand-over's "acceptable down to" boundary (5/10 deterministic winners). Phase 3.5 polish ticket filed as RUL-55 to push the floor up via bot heuristic and/or deck rebalance.
-- **Wave 4 (parallel fan, ready)**: three disjoint tickets ship together to close M2 + clear documentation debt:
-  - **RUL-51** — SHOP round (every 3 rounds, lowest-VP buys first). Closes M2. Touches `engine/src/rulso/rules.py` near round-cadence.
-  - **RUL-53** — refresh `docs/engine/bots.md` for RUL-43/45/52 (PlayJoker, operator-MODIFIER skip rules, `enumerate_legal_actions`, `bots/human.py`). Docs-only.
-  - **RUL-55** — Phase 3.5 polish: push winner emergence above 5/10 by tuning `bots/random.py` PLAY_BIAS (Lever A) and/or `engine/data/cards.yaml` deck composition (Lever B). Touches `bots/random.py` and/or `cards.yaml`. Disjoint with RUL-51's `rules.py` edits.
-  - All three parallel-safe: disjoint touch surfaces. RUL-55 is the only one that reshuffles seed-0 deals (if Lever B is chosen); reconcile at merge sweep against `_drive_to_first_build` (already seed-independent post-Phase-3 fix).
-- **Open after Wave 4**: M3 ISMCTS scoping. Lean is still to defer M3 until the user has playtested via RUL-52 (now landed) — the playtest data shapes ISMCTS payoff. M3 also subsumes RUL-55's "≤6/10 means bots are bad, not deck is wrong" stop condition.
+- **Wave 4 (DONE 2026-05-10)**: parallel fan closes M2 + clears doc debt. PRs #54 (RUL-53), #55 (RUL-51), #56 (RUL-55). Per-ticket detail in the "Wave 4 ship summary" table above.
+- **Open after Wave 4**: M3 ISMCTS scoping. Lean is to defer M3 until the user has playtested via RUL-52 (`uv run --project engine rulso --seed 5 --rounds 100 --human-seat 0`) — the playtest data shapes ISMCTS payoff. RUL-56 (SHOP content) is the only non-M3 substrate that can land first; whether it should is a design call.
 
 ### Wave 2 — final state (2026-05-10)
 
@@ -99,9 +119,10 @@ M2 Phase 2 SHIPPED (RUL-31 cards/state.py substrate, RUL-32 WHEN+WHILE lifecycle
 
 ## Open judgment calls
 
-- **RUL-55 polish stop condition**: if neither Lever A (bot heuristic) nor Lever B (deck rebalance) nor A+B can push winners above 6/10, hand back. The next move is M3 ISMCTS, not more polish — ≤6/10 with random bots is "the bots are bad", not "the deck is wrong".
-- **M3 vs further M2 polish**: defer until Wave 4 settles + user CLI-playtest signal (RUL-52 usable via `uv run --project engine rulso --seed 5 --rounds 100 --human-seat 0`).
-- **Canonical legality module**: RUL-52 worker correctly observed that `legality.legal_actions` doesn't exist — `bots.random.enumerate_legal_actions` is the de-facto canonical surface now. No refactor planned; if a third driver lands (replay, ISMCTS rollouts), reconsider then.
+- **M3 vs RUL-56 SHOP content next**: M2 is closed; choice between (a) starting M3 ISMCTS now or (b) landing SHOP content first (RUL-56). Lean is M3 — SHOP content's payload-type decision is downstream of "what cards make games interesting", which ISMCTS surfaces. Defer until user CLI-playtest signal via `uv run --project engine rulso --seed 5 --rounds 100 --human-seat 0`.
+- **M2 follow-ups not blocking M3**: RUL-56 (SHOP content) + RUL-57 (bots.md dice-mode drift). RUL-57 is a parallel-safe docs chore that can ship anytime; RUL-56 is engine work that wants a payload-type ADR before dispatch.
+- **Canonical legality module**: RUL-52 worker observed `legality.legal_actions` doesn't exist — `bots.random.enumerate_legal_actions` is the de-facto canonical surface. ISMCTS rollouts (M3) will consume it, so this is the third driver flagged at Wave 2; reconsider a `legality` module promotion when M3 starts.
+- **Deck-composition fragility extends beyond `_drive_to_first_build`** (RUL-55 Lever B finding): goal-pool shuffle cascade breaks `test_cards_loader` + `test_jokers.test_full_game_round_trip_with_persistent_when_joker` + `test_determinism.test_recycle_path` when the deck reshuffles. Any future ticket that changes `cards.yaml deck:` must rebase + run those three test files before merge (in addition to the existing M1.5 / M2 smokes). See `docs/workflow_lessons.md` 2026-05-10 entry for the full list.
 
 ## Phase 3 prep — why RUL-34 landed first
 
@@ -118,13 +139,13 @@ RUL-31's worker probe found that even silently-safe deck additions (ANYONE/EACH 
 
 ## Done (chronological, this session)
 
-M1 + M1.5 + M2 Phase 1 + M2 Phase 2 + M2 Phase 3 fan + Wave 1 + Wave 2 + Wave 3 (RUL-35) = ~34 tickets shipped.
+M1 + M1.5 + M2 Phase 1 + M2 Phase 2 + M2 Phase 3 fan + Wave 1 + Wave 2 + Wave 3 (RUL-35) + Wave 4 (RUL-51 + RUL-53 + RUL-55) = ~37 tickets shipped. **M1, M1.5, and M2 all closed.** Next milestone: M3 ISMCTS (RUL-NN to be opened).
 
 ## Locked decisions / substrate watchpoints
 
 - `engine/src/rulso/state.py` is the contract. **Additive-only edits.**
 - Pydantic v2 + frozen by default; tuples for collections.
-- M2 stubs raise `NotImplementedError("M2: …")` — most replaced in Phase 3; SHOP entry remains until RUL-51.
+- M2 stubs are fully replaced — SHOP entry landed via RUL-51 (PR #55).
 - Pre-commit hook resolves `ruff` via `uv run --project engine`.
 - **Active ADRs**: ADR-0001 (floating-label definitions), ADR-0002 (comparator dice flow), ADR-0003 (SUBJECT.scope_mode enum), ADR-0004 (operator MODIFIER attachment), ADR-0005 (GoalCard typing).
 - Workers do not edit `docs/<area>/readme.md` — orchestrator owns the index, batched into RUL-23 commits per merge sweep.
@@ -135,7 +156,8 @@ M1 + M1.5 + M2 Phase 1 + M2 Phase 2 + M2 Phase 3 fan + Wave 1 + Wave 2 + Wave 3 
 - **Substrate-and-data tickets** must split DoD into (a) data loadable + (b) data observable in runtime.
 - **Behavioural-substrate cascade rule** (2026-05-10): when a PR changes a public-function contract (signature, required-field consumption, exception class), every test that constructs `GameState` for the affected code path is implicitly impacted. Rebase against post-merge main and run affected tests before squash-merge if the PR is part of a parallel fan with a sibling that landed a contract change. CLEAN merge mechanics is necessary but not sufficient.
 - **Conditional-substrate rule** (2026-05-10, RUL-54): when a PR adds a code path that fires conditionally on accumulated runtime state (deck exhaustion, retry counter, history growth), spot-check by asking "what's the depth at which this branch first triggers, and does any test reach it?" If no test reaches the branch and it's reachable in production, the path is unreviewed substrate. RUL-47's `rng=None` fallback at the recycle site didn't bite until round 13; RUL-54 lifted it to a `ValueError` so future callers can't silently regress. Disjoint-stream pattern: `rng = seed`, `refill_rng = seed ^ 0x5EED`, `dice_rng = seed ^ 0xD1CE`, `effect_rng = seed ^ 0xEFFC` (RUL-54).
-- **Public legal-action surface (Wave 2)**: `bots.random.enumerate_legal_actions(state, player)` is the canonical raw legal-action enumeration — no `PLAY_BIAS` weighting; consumed by `bots.human` and any future driver. `bots.random.choose_action` remains the bot's PLAY_BIAS-weighted picker.
+- **Public legal-action surface (Wave 2)**: `bots.random.enumerate_legal_actions(state, player)` is the canonical raw legal-action enumeration — no `PLAY_BIAS` weighting; consumed by `bots.human` and any future driver. `bots.random.choose_action` remains the bot's PLAY_BIAS-weighted picker (`PLAY_BIAS = 0.75` post-RUL-55).
+- **SHOP substrate (Wave 4, RUL-51)**: `Phase.SHOP` real handler at `engine/src/rulso/rules.py` (`enter_round_start` step-5 cadence check + `complete_shop` / `apply_shop_purchase` / `shop_purchase_order` helpers). `ShopOffer` model + `shop_pool` / `shop_offer` / `shop_discard` fields on `GameState`. Cadence `round_number % SHOP_INTERVAL == 0` (every 3 rounds); buy order `(vp asc, chips asc, seat asc)` per `design/state.md`. `cards.yaml shop_cards:` ships empty — SHOP short-circuits when no offers; content lands via RUL-56.
 
 ## Conventions (also in CLAUDE.md, restated for reflex)
 

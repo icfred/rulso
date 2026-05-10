@@ -1,4 +1,4 @@
-_Last edited: 2026-05-10 by RUL-23 (sweep batching RUL-35: M2 watchable smoke gate)_
+_Last edited: 2026-05-10 by RUL-23 (sweep batching Wave 4: RUL-51 SHOP + RUL-53 bots-docs + RUL-55 polish — closes M2)_
 
 # engine
 
@@ -11,12 +11,12 @@ Python 3.12 package. `uv` managed. Pydantic v2 state, asyncio + `websockets` ser
 | `engine/pyproject.toml` | scaffolded | deps: `pydantic>=2`, `websockets`, `pytest`; dev: `ruff` |
 | `engine/src/rulso/__init__.py` | stub | package marker |
 | `engine/src/rulso/state.py` | live | frozen pydantic models + constants — see [state-models.md](state-models.md) |
-| `engine/src/rulso/rules.py` | live | round flow phase machine — see [round-flow.md](round-flow.md) |
+| `engine/src/rulso/rules.py` | live | round flow phase machine + SHOP phase wiring (RUL-51): `enter_round_start` step-5 SHOP check, `complete_shop`, `apply_shop_purchase`, `shop_purchase_order` — see [round-flow.md](round-flow.md) |
 | `engine/src/rulso/grammar.py` | live | IF rule grammar (M1: SUBJECT/QUANT/NOUN) — see [if-resolver.md](if-resolver.md) |
 | `engine/src/rulso/effects.py` | live | IF rule resolver + revealed-effect dispatcher (RUL-39 D), comparator-dice (RUL-42 G), op-modifier fold (RUL-43 H), polymorphic NOUN reads (RUL-44 I), ANYONE/EACH scoping (RUL-41 F) — see [if-resolver.md](if-resolver.md) |
 | `engine/src/rulso/cli.py` | live | round-by-round CLI runner — see [cli.md](cli.md) |
 | `engine/src/rulso/labels.py` | live | LEADER/WOUNDED (M1.5) + GENEROUS/CURSED (M2 RUL-33); MARKED/CHAINED stay empty pending status-apply ticket — see [labels.md](labels.md) |
-| `engine/src/rulso/cards.py` | live | yaml loader + deck builder. Covers M1.5 + M2 vocabulary (CardType.EFFECT, GoalCard, scope_mode); reads `design/cards.yaml` |
+| `engine/src/rulso/cards.py` | live | yaml loader + deck builder. Covers M1.5 + M2 vocabulary (CardType.EFFECT, GoalCard, scope_mode) plus SHOP offers (RUL-51 `_ShopEntry`, `load_shop_offers`); reads `design/cards.yaml` |
 | `engine/src/rulso/legality.py` | live | small helpers for legal-action selection (M1.5: `first_card_of_type`) — see [legality.md](legality.md) |
 | `engine/src/rulso/persistence.py` | live | WHEN/WHILE rule lifecycle (RUL-32) wired through the Phase 3 effect dispatcher. JOKER PERSIST_WHEN/WHILE/ECHO promote rules via `add_persistent_rule` (RUL-45 J). See [persistence.md](persistence.md) |
 | `engine/src/rulso/status.py` | live | per-token apply/clear/decay matrix (BURN / MUTE / BLESSED / MARKED / CHAINED) per RUL-30 spike; round-start tick replaces M1.5 `_apply_burn_tick` (RUL-40 E). `consume_blessed_or_else` wired into `effects._lose_chips` and the BURN tick (RUL-49); zero-magnitude losses do not consume BLESSED — see [status.md](status.md) |
@@ -24,7 +24,7 @@ Python 3.12 package. `uv` managed. Pydantic v2 state, asyncio + `websockets` ser
 | `engine/src/rulso/server.py` | stub | websocket entry point |
 | `engine/src/rulso/protocol.py` | stub | engine↔client message types |
 | `engine/src/rulso/bots/__init__.py` | stub | bots package |
-| `engine/src/rulso/bots/random.py` | live | random-legal-play bot + public `enumerate_legal_actions` helper (RUL-52) — see [bots.md](bots.md) |
+| `engine/src/rulso/bots/random.py` | live | random-legal-play bot + public `enumerate_legal_actions` helper (RUL-52) + `select_purchase` SHOP picker (RUL-51); `PLAY_BIAS = 0.75` post-RUL-55 — see [bots.md](bots.md) |
 | `engine/src/rulso/bots/human.py` | live | TTY action driver for `--human-seat` (RUL-52); EOF→Pass; reuses `bots.random.enumerate_legal_actions` for the menu |
 | `engine/tests/test_smoke.py` | live | asserts `import rulso` works |
 | `engine/tests/test_state_models.py` | live | construction, frozen rejection, JSON round-trip |
@@ -49,7 +49,8 @@ Python 3.12 package. `uv` managed. Pydantic v2 state, asyncio + `websockets` ser
 | `engine/tests/test_jokers.py` | live | JOKER attachment (RUL-45 J): PERSIST_WHEN/WHILE promote, ECHO conditional one-shot WHEN, DOUBLE effect doubling |
 | `engine/tests/test_cli_human_seat.py` | live | CLI human-seat driver (RUL-52): valid-pick happy path, invalid/out-of-range loop, EOF→Pass fallback, all 4 seats parametrised, out-of-range CLI flag rejection |
 | `engine/tests/test_determinism.py` | live | end-to-end determinism past effect-deck recycle (RUL-54): byte-identical stdout on 3 seeds across back-to-back `cli.run_game` invocations + guard that the recycle threshold is actually crossed |
-| `engine/tests/test_m2_watchable.py` | live | M2 watchable smoke (RUL-35, Wave 3 gate): 10-seed × rounds=200 sweep asserts winner floor (5/10), full M2 lifecycle coverage (WHEN/WHILE/goal/effect) via test-side wrapper instrumentation — see [m2-smoke.md](m2-smoke.md) |
+| `engine/tests/test_m2_watchable.py` | live | M2 watchable smoke (RUL-35 Wave 3 gate; RUL-55 Phase 3.5 polish lifted floor 5→7): 10-seed × rounds=200 sweep asserts winner floor (7/10), full M2 lifecycle coverage (WHEN/WHILE/goal/effect) via test-side wrapper instrumentation — see [m2-smoke.md](m2-smoke.md) |
+| `engine/tests/test_shop.py` | live | SHOP phase coverage (RUL-51): cadence (every `SHOP_INTERVAL=3` rounds), buy order (VP asc → chips asc → seat asc), `apply_shop_purchase` / `complete_shop` / pool-recycle / end-to-end SHOP → next round_start |
 
 ## Commands
 
