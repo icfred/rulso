@@ -1,4 +1,4 @@
-_Last updated: 2026-05-10 by orchestrator session — Wave 4 SHIPPED (RUL-51 SHOP + RUL-53 bots-docs + RUL-55 polish); **M2 CLOSED** (RUL-24 → Done). Main at 468 tests, ruff clean, deterministic 7/10 winner floor. Follow-ups: RUL-56 (SHOP content) + RUL-57 (bots.md dice-mode drift). Next gate: M3 ISMCTS scoping_
+_Last updated: 2026-05-10 by orchestrator session — **Milestone reorder accepted (ADR-0006)**: Foundation/Minimal Client becomes M3 (was M4); ISMCTS becomes M4 (was M3). Pre-M3 sweep "M2.5 — Mechanic gaps" gap-closes SHOP content, MARKED consumer wiring, and status-data completeness. Main at 468 tests, ruff clean. CLI human-seat (RUL-52) confirmed unplayable for design signal — drove the reorder._
 
 # Rulso — orchestrator bootstrap
 
@@ -12,12 +12,51 @@ Linear board: https://linear.app/rulso (team `RUL`, projects: Engine / Infra / B
 |---|---|---|---|
 | RUL-5 | M1: Engine core | 4-bot CLI game runs end-to-end, IF rules resolve, state machine sound | **Done** |
 | RUL-15 | M1.5: Watchable engine | First moment the game is *real* | **Done** (closed 2026-05-10) |
-| RUL-24 | M2: Full card set | Every card type and mechanic from cards.yaml works | **Done** (closed 2026-05-10) — Phase 1 + Phase 2 + Phase 3 fan + Waves 1–4 all SHIPPED. Follow-ups RUL-56 (SHOP content) + RUL-57 (bots.md drift) tracked under backlog. |
+| RUL-24 | M2: Full card set | Every card type and mechanic from cards.yaml works | **Done** (closed 2026-05-10) — gap-close set tracked as M2.5 below. |
+| _(no parent)_ | **M2.5: Mechanic gaps** (pre-M3 sweep) | Close M2 mechanics that ship in code but not in play | **In flight** — RUL-56 (SHOP content, blocked-by RUL-62), RUL-57 (bots.md drift), RUL-60 (MARKED consumer), RUL-61 (status-data completeness), RUL-62 (SHOP payload-type spike). Tracked as `parent = RUL-24` follow-ups, not a separate Linear milestone. |
+| RUL-58 | **M3: Foundation/Minimal Client** | Human can read the board, make a meaningful decision, reach a winner | **Backlog** — opens after M2.5 closes. Substrate-spike-first per ADR-0006. |
+| RUL-59 | **M4: Smart bot (ISMCTS)** | ISMCTS surfaces real design feedback in solo play | **Backlog** — blocked-by RUL-58; payoff design draws on M3 playtest signal. |
 | RUL-23 | Meta — orchestrator-authored cross-cutting commits | Permanent home for orchestrator commits | Permanent In Progress |
+
+## Milestone reorder — ADR-0006 (2026-05-10)
+
+The original `roadmap.md` ordering was M3 ISMCTS → M4 Pixi client → M5 polish. After M2 closed, the user attempted CLI playtesting via `rulso --human-seat 0` (RUL-52) and the prompt was unplayable — card IDs without text, no goal cards visible, no opponent state, 63 discard combos enumerated, no semantic preview of what completing the active rule would do. Bot strength is not the bottleneck; even with perfect ISMCTS opponents the human cannot make a meaningful decision against the current rendering. ADR-0006 reorders the post-M2 milestones:
+
+| Milestone | Old | New |
+|---|---|---|
+| M3 | ISMCTS bot | **Foundation/Minimal Client** |
+| M4 | Pixi client | **Smart bot (ISMCTS)** |
+| M5 | Polish | Polish (unchanged) |
+
+Foundation Client DoD bar is "ugly but playable": engine WS protocol + server, client bootstrap (Vite/Pixi/TS), type generation, decision-support rendering (full card text, semantic rule preview, goals visible, opponents' public state), click-to-play input, dice text. Polish (Aegean palette, animations, sound, drag-drop, iconography) all defers to M5.
 
 ## In flight
 
-**Nothing in flight. M2 is closed.** Wave 4 fan all merged: RUL-51 (SHOP phase substrate, PR #55), RUL-53 (bots.md refresh for Phase 3 + Wave 2, PR #54), RUL-55 (Phase 3.5 polish: PLAY_BIAS 0.85 → 0.75, PR #56). Main: **468 tests passing** (455 + 13 new from RUL-51), ruff clean. Deterministic M2 watchable smoke now lands 7/10 winners (seeds 0/1/3/4/5/7/9 win; 2/6/8 cap-hit). SHOP cadence/ordering substrate is live but `shop_cards:` is empty — SHOP doesn't fire in CLI play yet; content lands via RUL-56.
+**M2.5 — Mechanic gaps (pre-M3 sweep).** Three engine/data gaps + one design spike + one docs chore:
+
+| Ticket | Status | Notes |
+|---|---|---|
+| RUL-56 | Backlog (blocked-by RUL-62) | SHOP content: populate `cards.yaml shop_cards:`. Dispatchable post-RUL-62 ADR. |
+| RUL-57 | Todo (parallel-safe) | `docs/engine/bots.md` dice-mode drift: LT/LE/GT/GE/EQ default 2d6 only post-RUL-42. Parallel-safe docs chore. |
+| RUL-60 | Todo (parallel-safe) | MARKED consumer wiring: narrow `EACH_PLAYER` scoping to MARKED holders when ≥1 (per `design/status-tokens.md`); fall back to all-players when 0 holders. Currently `effects.py:414` ignores MARKED entirely for polymorphic SUBJECTs. Engine work. |
+| RUL-61 | Todo (parallel-safe) | Status data completeness: add `eff.marked.apply` and `eff.chained.clear` to `cards.yaml effect_cards:` + `effect_deck:`. Today MARKED is decorative (no card produces it) and CHAINED is one-way (no card clears it). Data-only. |
+| RUL-62 | Todo (parallel-safe) | SHOP payload-type ADR spike. Output: `docs/decisions/ADR-NNNN-shop-payload-semantics.md`. Unblocks RUL-56 for dispatch. Time-boxed; stop-condition if all candidate shapes feel arbitrary. |
+
+Main: **468 tests passing**, ruff clean. Deterministic M2 watchable smoke at 7/10 winners (seeds 0/1/3/4/5/7/9 win; 2/6/8 cap-hit) on PLAY_BIAS=0.75.
+
+## Audit findings — what's actually wired vs what isn't (2026-05-10)
+
+Cross-referenced `engine/src/rulso/{status,effects,goals}.py` against `design/status-tokens.md` and `cards.yaml`:
+
+- **BURN** — apply (`APPLY_BURN`) ✓, clear (`CLEAR_BURN`) ✓, tick (`status.tick_round_start`) ✓, BLESSED interaction ✓, NOUN read (`BURN_TOKENS`) ✓.
+- **MUTE** — apply (`APPLY_MUTE`) ✓, natural decay at `round_start` step 2 ✓, blocks MODIFIER plays in `bots.random._enumerate_plays` ✓.
+- **BLESSED** — apply (`APPLY_BLESSED`) ✓, on-use clear via `consume_blessed_or_else` ✓, integrated at `LOSE_CHIPS` and BURN tick ✓.
+- **MARKED** — apply (`APPLY_MARKED` handler) ✓, natural decay at `resolve` step 10 ✓. **Gaps**: (a) no `eff.marked.apply` in `cards.yaml effect_cards:` → handler never invoked in production; (b) `EACH_PLAYER` scoping at `effects.py:414` ignores MARKED — returns all players regardless. Per `design/status-tokens.md` MARKED should narrow EACH_PLAYER scope to MARKED holders when ≥1 holder.
+- **CHAINED** — apply (`APPLY_CHAINED`) ✓, clear handler (`CLEAR_CHAINED`) ✓, goal-claim eligibility filter at `goals.py:123` ✓, `THE_FREE_AGENT` predicate read ✓. **Gap**: no `eff.chained.clear` in `cards.yaml effect_cards:` → `CLEAR_CHAINED` handler never invoked in production; CHAINED is permanent in the live game.
+- **SHOP substrate** ✓ (RUL-51). **Gap**: empty `shop_cards:` (RUL-56).
+- **All other M2 mechanics** (WHEN/WHILE lifecycle, JOKER variants, polymorphic NOUN reads, comparator dice, operator MODIFIER fold, all 4 floating labels, goal claims) — wired and consumed.
+
+## Wave 4 ship summary (2026-05-10, PRs #54/#55/#56)
 
 ### Wave 4 ship summary (2026-05-10, PRs #54/#55/#56)
 
@@ -119,10 +158,10 @@ M2 Phase 2 SHIPPED (RUL-31 cards/state.py substrate, RUL-32 WHEN+WHILE lifecycle
 
 ## Open judgment calls
 
-- **M3 vs RUL-56 SHOP content next**: M2 is closed; choice between (a) starting M3 ISMCTS now or (b) landing SHOP content first (RUL-56). Lean is M3 — SHOP content's payload-type decision is downstream of "what cards make games interesting", which ISMCTS surfaces. Defer until user CLI-playtest signal via `uv run --project engine rulso --seed 5 --rounds 100 --human-seat 0`.
-- **M2 follow-ups not blocking M3**: RUL-56 (SHOP content) + RUL-57 (bots.md dice-mode drift). RUL-57 is a parallel-safe docs chore that can ship anytime; RUL-56 is engine work that wants a payload-type ADR before dispatch.
-- **Canonical legality module**: RUL-52 worker observed `legality.legal_actions` doesn't exist — `bots.random.enumerate_legal_actions` is the de-facto canonical surface. ISMCTS rollouts (M3) will consume it, so this is the third driver flagged at Wave 2; reconsider a `legality` module promotion when M3 starts.
-- **Deck-composition fragility extends beyond `_drive_to_first_build`** (RUL-55 Lever B finding): goal-pool shuffle cascade breaks `test_cards_loader` + `test_jokers.test_full_game_round_trip_with_persistent_when_joker` + `test_determinism.test_recycle_path` when the deck reshuffles. Any future ticket that changes `cards.yaml deck:` must rebase + run those three test files before merge (in addition to the existing M1.5 / M2 smokes). See `docs/workflow_lessons.md` 2026-05-10 entry for the full list.
+- **RUL-56 SHOP payload-type ADR**: SHOP content needs a payload-type decision before dispatch. Three candidate payload shapes flagged in RUL-56's body (chip-buy, card-buy, status-clear); the ADR locks one. Author the ADR in this orchestrator session before opening RUL-56 for dispatch, or punt to a fresh spike. Lean: punt to a focused `RUL-NN: SHOP payload-type spike` ticket — the orchestrator shouldn't author content design decisions in the middle of a milestone reorder.
+- **Canonical legality module**: RUL-52 worker observed `legality.legal_actions` doesn't exist — `bots.random.enumerate_legal_actions` is the de-facto canonical surface. M4 ISMCTS rollouts will consume it; reconsider promoting `enumerate_legal_actions` to `legality.py` when M4 starts. Also relevant for M3: the WS protocol's `action-submit` message envelope may want to reference a canonical action shape that lives outside `bots/random`.
+- **Foundation Client substrate spike scope**: M3 ADR-0006 commits to "WebSocket protocol shape spike + ratification ADR" as the substrate-first entry point. Open question: does the spike output live as one ADR (protocol-envelope shape) or two (envelope shape + state-broadcast cadence)? Defer to the spike worker's hand-back.
+- **Deck-composition fragility extends beyond `_drive_to_first_build`** (RUL-55 Lever B finding): goal-pool shuffle cascade breaks `test_cards_loader` + `test_jokers.test_full_game_round_trip_with_persistent_when_joker` + `test_determinism.test_recycle_path` when the deck reshuffles. Any M2.5 ticket that changes `cards.yaml deck:` (the status-data completeness ticket adds `eff.marked.apply` and `eff.chained.clear` to `effect_deck:` — different deck, but verify) must rebase + run those three test files before merge.
 
 ## Phase 3 prep — why RUL-34 landed first
 
