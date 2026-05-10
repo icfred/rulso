@@ -1,4 +1,4 @@
-_Last edited: 2026-05-10 by RUL-22_
+_Last edited: 2026-05-10 by RUL-33_
 
 # labels.py — floating-label computation
 
@@ -14,21 +14,24 @@ Pure function over `GameState`. Computed each round; never stored on state.
 | `LABEL_NAMES` | Tuple of all label keys (stable iteration order) |
 | `LEADER` / `WOUNDED` / `GENEROUS` / `CURSED` / `MARKED` / `CHAINED` | Label-name string constants |
 
-### M1.5 coverage (RUL-19)
+### Coverage
 
-| Label | Rule | Status |
-|---|---|---|
-| `THE LEADER` | `argmax(player.vp)` | live |
-| `THE WOUNDED` | `argmin(player.chips)` | live |
-| `THE GENEROUS` | `argmax(player.history.cards_given_this_game)` | M2 — empty frozenset |
-| `THE CURSED` | `argmax(player.status.burn)` | M2 — empty frozenset |
-| `THE MARKED` | `Player.status.marked` | M2 — empty frozenset |
-| `THE CHAINED` | `Player.status.chained` | M2 — empty frozenset |
+| Label | Rule | Status | Landed in |
+|---|---|---|---|
+| `THE LEADER` | `argmax(player.vp)` | live | RUL-19 |
+| `THE WOUNDED` | `argmin(player.chips)` | live | RUL-19 |
+| `THE GENEROUS` | `argmax(player.history.cards_given_this_game)` | live | RUL-33 |
+| `THE CURSED` | `argmax(player.status.burn)` | live | RUL-33 |
+| `THE MARKED` | `Player.status.marked` | M2 — empty frozenset | (M2 status-apply) |
+| `THE CHAINED` | `Player.status.chained` | M2 — empty frozenset | (M2 status-apply) |
 
 ### Tie-break policy
 
-Ties → all tied players hold the label. Diverges from `design/state.md`'s
-"ties → unassigned"; Linear (RUL-19) is the source of truth.
+Ties → all tied players hold the label. Per ADR-0001 (supersedes
+`design/state.md`'s original "ties → unassigned").
+
+GENEROUS / CURSED additionally honour a **zero → empty** rule: if no player
+has given a card / taken a burn, the label has no holder.
 
 ### Edge cases
 
@@ -36,6 +39,9 @@ Ties → all tied players hold the label. Diverges from `design/state.md`'s
 |---|---|
 | `state.players` empty | every key → `frozenset()` |
 | All players tied on vp / chips | every player id in `LEADER` / `WOUNDED` |
+| All players at zero `cards_given_this_game` | `GENEROUS` → `frozenset()` |
+| All players at zero `status.burn` | `CURSED` → `frozenset()` |
+| All players tied at the same positive `cards_given_this_game` / `status.burn` | every player id in `GENEROUS` / `CURSED` |
 
 ### Call sites
 
@@ -54,6 +60,10 @@ Labels are never stored on `GameState` (ADR-0001). They flow as a transient para
 - `test_all_zero_vp_means_every_player_is_leader`
 - `test_all_equal_chips_means_every_player_is_wounded`
 - `test_empty_player_set_returns_all_empty_frozensets`
-- `test_m2_stub_labels_are_empty`
+- `test_single_generous_max_cards_given` / `test_tied_generous_all_hold_label`
+- `test_generous_all_zero_means_empty` / `test_generous_all_equal_positive_means_all_tied`
+- `test_single_cursed_max_burn` / `test_tied_cursed_all_hold_label`
+- `test_cursed_no_burn_means_empty` / `test_cursed_all_equal_burn_means_all_tied`
+- `test_marked_and_chained_remain_empty`
 - `test_returns_frozensets`
 - `test_pure_function_does_not_mutate_state`
