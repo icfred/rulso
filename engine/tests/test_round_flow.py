@@ -121,6 +121,14 @@ def test_round_start_slot_defs_match_condition_template() -> None:
 
 def test_dealer_first_slot_card_came_from_dealer_hand() -> None:
     state = start_game(seed=0)
+    # RUL-23: inject a SUBJECT into dealer's hand for deck-size resilience
+    # (Phase 3 deck extensions reshuffle seed-0 deals).
+    seed_subject = Card(id="subj.p0", type=CardType.SUBJECT, name="p0")
+    dealer = state.players[0]
+    new_dealer = dealer.model_copy(update={"hand": (seed_subject,) + dealer.hand})
+    state = state.model_copy(
+        update={"players": (new_dealer,) + state.players[1:]},
+    )
     dealer_hand_before = state.players[0].hand
     state = advance_phase(state)
     chosen = state.active_rule.slots[0].filled_by
