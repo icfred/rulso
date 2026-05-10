@@ -6,9 +6,9 @@
   per token at ``round_start`` step 2. Cleared by ``CLEAR_BURN`` cards.
 * ``mute`` — toggle. Blocks MODIFIER plays for the round following
   application. Clears at ``round_start`` step 2 (one-round lifetime).
-* ``blessed`` — toggle. Cancels the next chip-loss the bearer suffers; clears
-  on use. (BLESSED + BURN-tick cancellation is flagged in the spike — the M2
-  starter doesn't yet route BURN tick through ``consume_blessed_or_else``.)
+* ``blessed`` — toggle. Cancels the next chip-loss the bearer suffers
+  (including the BURN tick at ``round_start`` step 2; RUL-49); clears on
+  use via :func:`consume_blessed_or_else`.
 * ``marked`` — toggle. Used by ``EACH PLAYER`` rule scoping; clears at
   ``resolve`` step 10 (one-round lifetime).
 * ``chained`` — toggle. Blocks goal-claim eligibility. Clears via
@@ -105,12 +105,20 @@ def tick_round_start(player: Player) -> Player:
     """``round_start`` step 2: drain ``BURN_TICK × burn`` chips and clear MUTE.
 
     BURN tokens themselves persist (only the chip drain ticks). MUTE flag
-    clears per its one-round lifetime. Chips floor at 0.
+    clears per its one-round lifetime regardless of BLESSED.
+
+    BLESSED interaction (RUL-49, ``design/status-tokens.md`` flag 1): when
+    BLESSED and BURN are both held, the chip drain is routed through
+    :func:`consume_blessed_or_else` — BLESSED clears, BURN tokens persist,
+    chips are unchanged. With BURN==0 the tick has nothing to drain, so
+    BLESSED is left intact (a zero-loss event must not consume the token).
     """
     burn = player.status.burn
-    new_chips = max(0, player.chips - BURN_TICK * burn)
+    drain = BURN_TICK * burn
+    if drain > 0:
+        player = consume_blessed_or_else(player, drain)
     new_status = player.status.model_copy(update={"mute": False})
-    return player.model_copy(update={"chips": new_chips, "status": new_status})
+    return player.model_copy(update={"status": new_status})
 
 
 def tick_resolve_end(player: Player) -> Player:
@@ -124,11 +132,10 @@ def tick_resolve_end(player: Player) -> Player:
 def consume_blessed_or_else(player: Player, loss: int) -> Player:
     """If BLESSED, cancel ``loss`` and clear BLESSED; else apply chip loss.
 
-    Helper for chip-loss handlers that should respect BLESSED. The M2 starter
-    chip-loss effects (``LOSE_CHIPS``) don't yet route through here — wiring
-    is left to a follow-up so the BLESSED+chip-loss interaction lands as a
-    single coherent change rather than a partial flip across multiple call
-    sites. Provided now so the surface is already in place.
+    Single point of integration for every chip-loss site (RUL-49). Live call
+    sites: :func:`tick_round_start` (BURN tick) and ``effects._lose_chips``
+    (``LOSE_CHIPS`` effect). Callers are responsible for skipping zero-magnitude
+    paths so a no-op event does not silently consume a held BLESSED.
     """
     if player.status.blessed:
         new_status = player.status.model_copy(update={"blessed": False})

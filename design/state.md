@@ -173,7 +173,7 @@ A persistent rule whose SUBJECT references an **unassigned** label sits dormant 
 |---|---|---|
 | `BURN` | Owner loses `BURN_TICK` chips per token at `round_start` step 2 | Persists until removed by clearing card |
 | `MUTE` | Cannot play MODIFIER cards next round | Cleared at end of the round it applied |
-| `BLESSED` | Next chip-loss effect on bearer is canceled | Cleared on use |
+| `BLESSED` | Next chip-loss the bearer suffers (including the BURN tick at `round_start` step 2) is canceled | Cleared on use |
 | `MARKED` | Next rule targeting `EACH PLAYER` only hits MARKED players | Cleared at end of `resolve` |
 | `CHAINED` | Cannot claim goal cards while held | Cleared by removal cards only |
 

@@ -308,10 +308,15 @@ def _gain_chips(state: GameState, targets: frozenset[str], magnitude: int) -> Ga
 
 
 def _lose_chips(state: GameState, targets: frozenset[str], magnitude: int) -> GameState:
+    # RUL-49: route per-player chip loss through ``status.consume_blessed_or_else``
+    # so each target's BLESSED is consumed independently. ``magnitude <= 0`` is
+    # a no-op (consuming BLESSED on a zero-loss event would be a silent bug).
+    if magnitude <= 0:
+        return state
     return _patch_players(
         state,
         targets,
-        lambda p: p.model_copy(update={"chips": max(0, p.chips - magnitude)}),
+        lambda p: status.consume_blessed_or_else(p, magnitude),
     )
 
 
@@ -373,7 +378,7 @@ register_effect_kind("NOOP", _noop)
 # at module-bottom so ``register_effect_kind`` is fully defined when
 # ``status.py`` runs its registration block (avoids the partial-import
 # bootstrap problem).
-from rulso import status as _status  # noqa: E402, F401
+from rulso import status  # noqa: E402
 
 # --- Internals --------------------------------------------------------------
 

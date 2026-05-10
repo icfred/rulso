@@ -1,4 +1,4 @@
-_Last edited: 2026-05-10 by RUL-40_
+_Last edited: 2026-05-10 by RUL-49_
 
 # status.py — status-token primitives
 
@@ -28,8 +28,9 @@ Centralised apply / clear / decay surface for the 5 status tokens
 
 | Site | Call | Notes |
 |---|---|---|
-| `rules.enter_round_start` step 2 | `status.tick_round_start(p)` for each player | Replaced M1.5 `_apply_burn_tick` (file removed). |
+| `rules.enter_round_start` step 2 | `status.tick_round_start(p)` for each player | Replaced M1.5 `_apply_burn_tick` (file removed). BURN drain routes through `consume_blessed_or_else` (RUL-49). |
 | `rules.enter_resolve` step 10 | `status.tick_resolve_end(p)` for each player | Net-new in M2; co-located with discard collection. |
+| `effects._lose_chips` (`LOSE_CHIPS` handler) | `status.consume_blessed_or_else(p, magnitude)` per target | RUL-49: per-target so each BLESSED is consumed independently; `magnitude <= 0` short-circuits (no token consumed on zero-loss). |
 | `effects.dispatch_effect` registry | 7 registrations at module load | `effects.py` imports `status` at module-bottom; `status.py` imports `effects` at top — registrations fire eagerly without circular bootstrap (`register_effect_kind` is fully defined when `status.py` runs). |
 
 ### Effect-kind registrations (M2 starter — `design/status-tokens.md` §"M2 starter subset")
@@ -56,10 +57,11 @@ those tokens in M2 (MUTE/BLESSED/MARKED clear via natural decay or on-use).
 * **MUTE**: applied this round, blocks MODIFIER plays *next* round. Clears at
   `round_start` step 2 of the round after the applied round (one-round
   lifetime).
-* **BLESSED**: cancels the next chip-loss the bearer suffers; clears on use
-  via `consume_blessed_or_else`. M2 starter chip-loss handlers don't yet
-  route through this helper — wiring is left to the chip-loss + BLESSED
-  follow-up (status-tokens.md flagged the BURN-tick interaction).
+* **BLESSED**: cancels the next chip-loss the bearer suffers — including the
+  BURN tick at `round_start` step 2 (RUL-49, resolves
+  `design/status-tokens.md` flag 1). Decay order at the tick: BLESSED clears
+  first, BURN tokens persist, MUTE clears regardless. Zero-magnitude losses
+  do not consume the token.
 * **MARKED**: one-round lifetime; clears at `resolve` step 10. Read by
   `EACH PLAYER` rule scoping (RUL-30 matrix; RUL-25 ANYONE/EACH ADR).
 * **CHAINED**: cleared via `CLEAR_CHAINED` cards only; no natural decay.
@@ -68,8 +70,6 @@ those tokens in M2 (MUTE/BLESSED/MARKED clear via natural decay or on-use).
 
 ### Out of scope for RUL-40
 
-* BLESSED + chip-loss wiring at `effects._lose_chips` (provided as a primitive;
-  call-site flip is a follow-up).
 * CHAINED gate inside `goals.check_claims` (gate exists conceptually; the
   consuming logic lands with the goal-claim integration ticket).
 * Multi-target appliers beyond MARKED (single-target is the M2 starter).
