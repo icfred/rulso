@@ -1,4 +1,4 @@
-_Last edited: 2026-05-09 by RUL-8_
+_Last edited: 2026-05-10 by RUL-26_
 
 # state.py — Pydantic models
 
@@ -26,14 +26,14 @@ All `frozen=True`. Collections are `tuple[...]` so frozen instances are deeply i
 |---|---|
 | `Card` | `id: str`, `type: CardType`, `name: str` |
 | `PlayerStatus` | `burn: int`, `mute/blessed/marked/chained: bool` |
-| `PlayerHistory` | `rules_completed_this_game: int`, `cards_given_this_game: int`, `last_round_was_hit: bool` |
+| `PlayerHistory` | `rules_completed_this_game: int`, `cards_given_this_game: int`, `hits_taken_this_game: int` (RUL-26), `last_round_was_hit: bool` |
 | `Player` | `id`, `seat`, `chips`, `vp`, `hand: tuple[Card, ...]`, `status`, `history` |
 | `Slot` | `name: str`, `type: CardType`, `filled_by: Card \| None`, `modifiers: tuple[Card, ...]` |
 | `Play` | `player_id: str`, `card: Card`, `slot: str` |
 | `RuleBuilder` | `template: RuleKind`, `slots: tuple[Slot, ...]`, `plays: tuple[Play, ...]`, `joker_attached: Card \| None` |
 | `PersistentRule` | `kind: RuleKind` (WHEN\|WHILE), `rule: RuleBuilder`, `created_round: int`, `created_by: str` |
 | `LastRoll` | `player_id: str`, `value: int`, `dice_count: int` |
-| `GameState` | `phase`, `round_number`, `dealer_seat`, `active_seat`, `players`, `deck`, `discard`, `effect_deck`, `effect_discard`, `goal_deck`, `goal_discard`, `active_goals`, `active_rule: RuleBuilder \| None`, `persistent_rules`, `last_roll: LastRoll \| None`, `winner: Player \| None`, `build_turns_taken: int` (RUL-8), `revealed_effect: Card \| None` (RUL-8) |
+| `GameState` | `phase`, `round_number`, `dealer_seat`, `active_seat`, `players`, `deck`, `discard`, `effect_deck`, `effect_discard`, `goal_deck`, `goal_discard`, `active_goals: tuple[Card \| None, ...]` defaults `(None, None, None)` (RUL-26), `shop_deck` (RUL-26), `active_rule: RuleBuilder \| None`, `persistent_rules`, `last_roll: LastRoll \| None`, `winner: Player \| None`, `build_turns_taken: int` (RUL-8), `revealed_effect: Card \| None` (RUL-8) |
 
 ### Update pattern
 

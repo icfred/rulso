@@ -76,6 +76,8 @@ class PlayerHistory(BaseModel):
 
     rules_completed_this_game: int = 0
     cards_given_this_game: int = 0
+    # RUL-26: hit-history counter; consumed by M2 NOUN `hits` and follow-on labels.
+    hits_taken_this_game: int = 0
     last_round_was_hit: bool = False
 
 
@@ -163,7 +165,10 @@ class GameState(BaseModel):
     effect_discard: tuple[Card, ...] = ()
     goal_deck: tuple[Card, ...] = ()
     goal_discard: tuple[Card, ...] = ()
-    active_goals: tuple[Card, ...] = ()
+    # RUL-26: 3 face-up goal slots per design/state.md; None marks an empty slot.
+    active_goals: tuple[Card | None, ...] = (None, None, None)
+    # RUL-26: SHOP-card pile; populated when SHOP card content lands in M2.
+    shop_deck: tuple[Card, ...] = ()
     active_rule: RuleBuilder | None = None
     persistent_rules: tuple[PersistentRule, ...] = ()
     last_roll: LastRoll | None = None

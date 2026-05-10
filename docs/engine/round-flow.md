@@ -1,4 +1,4 @@
-_Last edited: 2026-05-10 by RUL-18_
+_Last edited: 2026-05-10 by RUL-26_
 
 # rules.py — round flow phase machine
 
@@ -85,13 +85,15 @@ Determinism: same `seed` ⇒ same hands and same `state.deck`.
 `enter_resolve(state, *, rng=None)`:
 
 1. **Steps 1-4 (new wiring)**: `effects.resolve_if_rule(state, state.active_rule)` renders the rule, scopes SUBJECT (label-aware per ADR-0001), evaluates `HAS [QUANT] [NOUN]` per scoped player, and applies the M1.5 stub effect (+1 VP per match). IF-only in M1.5; WHEN/WHILE land with persistent rules (M2).
-2. Steps 5-7: joker (guarded), persistent trigger, goal claim — M2 stubs.
-3. Step 8: label recompute — implicit (computed-not-stored).
-4. Step 9: win check unchanged.
-5. Step 10: discard played fragments unchanged.
-6. Step 11: rotate dealer unchanged.
-7. **Step 12 (new)**: `_refill_hands` brings every player back up to `HAND_SIZE`. When `state.deck` empties mid-refill, shuffles `state.discard` back into the deck via `rng` and continues. If both deck and discard are empty, that player's hand stays under `HAND_SIZE`.
-8. Step 13: transition to ROUND_START unchanged.
+2. Step 5: joker — guarded above.
+3. **Step 6 (RUL-26 wiring)**: `persistence.check_when_triggers(state, labels)` — no-op when `state.persistent_rules == ()`. Real WHEN-trigger firing lands with the M2 WHEN-rule feature ticket.
+4. Step 7: goal claim — M2 stub.
+5. Step 8: label recompute — implicit (computed-not-stored).
+6. Step 9: win check unchanged.
+7. Step 10: discard played fragments unchanged.
+8. Step 11: rotate dealer unchanged.
+9. **Step 12 (new)**: `_refill_hands` brings every player back up to `HAND_SIZE`. When `state.deck` empties mid-refill, shuffles `state.discard` back into the deck via `rng` and continues. If both deck and discard are empty, that player's hand stays under `HAND_SIZE`.
+10. Step 13: transition to ROUND_START unchanged.
 
 ### Substrate naming reconciliation (RUL-18)
 
@@ -110,7 +112,7 @@ substrate file (`state.py`, `effects.py`, `labels.py`, `grammar.py`,
 ### M1 stubs that survive
 
 - **Shop check** (`round_start` step 5): bypassed.
-- **WHILE-rule tick** (`round_start` step 4): raises `NotImplementedError("M2: persistent rule WHILE tick")` if `state.persistent_rules` is non-empty. M1 never adds persistent rules.
+- **WHILE-rule tick** (`round_start` step 4): wired to `persistence.tick_while_rules` (RUL-26); no-op when `state.persistent_rules == ()`. Real per-rule evaluation lands with the M2 WHILE-rule feature ticket.
 - **JOKER attachment** (`resolve` step 5): raises `NotImplementedError("M2: joker attachment")` if `active_rule.joker_attached` is set. M1 never attaches.
 - **Effect application** (`resolve` steps 1-4): wired to `effects.resolve_if_rule` for IF rules. WHEN/WHILE templates raise no error (only IF lands in M1.5's CONDITION deck) but their effects won't apply until M2 persistent rules land.
 - **Goal claim** (`resolve` step 7): no-op; goals deferred.
