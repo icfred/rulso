@@ -42,6 +42,7 @@ from rulso.state import (
     ACTIVE_GOALS,
     HAND_SIZE,
     PLAYER_COUNT,
+    SHOP_INTERVAL,
     VP_TO_WIN,
     Card,
     CardType,
@@ -53,6 +54,7 @@ from rulso.state import (
     Player,
     RuleBuilder,
     RuleKind,
+    ShopOffer,
     Slot,
 )
 
@@ -119,6 +121,16 @@ def start_game(seed: int = 0) -> GameState:
     initial_goal_deck: tuple[GoalCard, ...] = tuple(goal_pool)
     # --- end RUL-46 block ---
 
+    # --- RUL-51: shop-pool seed (own block) ---
+    # Same `rng` continues — keeps `start_game(seed)` deterministic (RUL-18).
+    # ``cards.yaml`` ships an empty ``shop_cards:`` section for M2; the SHOP
+    # cadence + ordering substrate runs over an empty pool and short-circuits
+    # in :func:`enter_round_start` so M1.5 / M2 smoke output is unaffected.
+    shop_pool_list = list(cards_module.load_shop_offers())
+    rng.shuffle(shop_pool_list)
+    initial_shop_pool: tuple[ShopOffer, ...] = tuple(shop_pool_list)
+    # --- end RUL-51 block ---
+
     return GameState(
         phase=Phase.ROUND_START,
         round_number=0,
@@ -129,6 +141,7 @@ def start_game(seed: int = 0) -> GameState:
         effect_deck=effect_deck,
         goal_deck=initial_goal_deck,
         active_goals=initial_active_goals,
+        shop_pool=initial_shop_pool,
     )
 
 
@@ -149,24 +162,35 @@ def advance_phase(state: GameState, *, rng: random.Random | None = None) -> Game
     if phase is Phase.RESOLVE:
         return enter_resolve(state, rng=rng)
     if phase is Phase.SHOP:
-        raise NotImplementedError("M2: shop phase")
+        # RUL-51: SHOP completes after the driver has applied each purchase
+        # (via :func:`apply_shop_purchase` / :func:`skip_shop_purchase`).
+        # ``complete_shop`` discards remaining offers and resumes round_start
+        # steps 6-8 (effect draw + dealer seed + transition to BUILD).
+        return complete_shop(state, rng=rng)
     if phase is Phase.END:
         return state
     raise ValueError(f"unknown phase {phase!r}")
 
 
 def enter_round_start(state: GameState, *, rng: random.Random | None = None) -> GameState:
-    """Run round_start steps 1-8 from ``design/state.md`` atomically.
+    """Run round_start steps 1-8 from ``design/state.md``.
 
-    Ends in ``phase=BUILD`` with the dealer's first slot pre-filled — unless
-    the dealer holds no card matching slot 0's type, in which case the rule
-    fails immediately and the dealer rotates (rule never enters BUILD).
+    Ends in one of three states:
 
-    ``rng`` is consumed by the step-6 effect-deck draw to reshuffle
-    ``state.effect_discard`` back into ``state.effect_deck`` when the deck is
-    empty (RUL-47). ``rng=None`` is tolerated only when the recycle path
-    does not trigger; reaching it without an rng raises ``ValueError``
-    (RUL-54 — see module docstring).
+    * ``phase=BUILD`` — happy path; the dealer's first slot is pre-filled.
+    * ``phase=ROUND_START`` — dealer held no card matching slot 0's type, so
+      the rule failed immediately and the dealer rotated.
+    * ``phase=SHOP`` — round_number hits the ``SHOP_INTERVAL`` cadence AND at
+      least one offer is available; pauses for the driver to apply purchases
+      via :func:`apply_shop_purchase`, then resume with
+      :func:`advance_phase` (which calls :func:`complete_shop` and runs
+      steps 6-8). Per ``design/state.md`` SHOP step 5: SHOP does NOT consume
+      the round counter — round_start resumes from step 6 after SHOP.
+
+    ``rng`` is consumed by the step-6 effect-deck draw (RUL-47) and the
+    step-5 ``shop_discard``→``shop_pool`` recycle (RUL-51). ``rng=None`` is
+    tolerated only when neither recycle path triggers; reaching either
+    without an rng raises ``ValueError`` (RUL-54 — see module docstring).
     """
     new_round = state.round_number + 1
     # Step 2: status tick — BURN drains chips, MUTE clears (RUL-40, RUL-30).
@@ -181,7 +205,111 @@ def enter_round_start(state: GameState, *, rng: random.Random | None = None) -> 
         tick_labels = labels.recompute_labels(tick_state)
         tick_state = persistence.tick_while_rules(tick_state, tick_labels)
         players = tick_state.players
-    # Step 5: shop check — bypassed in M1. See docs/engine/round-flow.md.
+    # Step 5: SHOP check (RUL-51). Cadence: ``round_number % SHOP_INTERVAL == 0``
+    # (every 3 rounds — fires on 3, 6, 9, …). SHOP enters only when offers
+    # are available; an empty ``shop_pool`` + ``shop_discard`` short-circuits
+    # the phase entirely so callers without SHOP content see no visible SHOP
+    # transition (preserves CLI / smoke output byte-for-byte until shop_cards
+    # land in cards.yaml).
+    post_step_4 = state.model_copy(update={"players": players, "round_number": new_round})
+    if new_round % SHOP_INTERVAL == 0:
+        offers, new_pool, new_discard = _draw_shop_offers(
+            post_step_4.shop_pool, post_step_4.shop_discard, rng
+        )
+        if offers:
+            return post_step_4.model_copy(
+                update={
+                    "phase": Phase.SHOP,
+                    "shop_offer": offers,
+                    "shop_pool": new_pool,
+                    "shop_discard": new_discard,
+                }
+            )
+    # No SHOP this round — proceed directly to steps 6-8.
+    return _round_start_post_shop(post_step_4, rng=rng)
+
+
+def complete_shop(state: GameState, *, rng: random.Random | None = None) -> GameState:
+    """Finalize the SHOP phase: discard remaining offers, resume round_start.
+
+    Per ``design/state.md`` SHOP steps 4-5: unsold offers move to
+    ``shop_discard``, then round_start resumes from step 6 (effect draw +
+    dealer seed). SHOP does NOT consume the round counter — ``round_number``
+    was already advanced when SHOP was entered. ``rng`` is forwarded to the
+    step-6 effect-deck draw.
+    """
+    if state.phase is not Phase.SHOP:
+        raise ValueError(f"complete_shop requires phase=SHOP, got {state.phase}")
+    cleared = state.model_copy(
+        update={
+            "phase": Phase.ROUND_START,
+            "shop_offer": (),
+            "shop_discard": state.shop_discard + state.shop_offer,
+        }
+    )
+    return _round_start_post_shop(cleared, rng=rng)
+
+
+def apply_shop_purchase(state: GameState, player_id: str, offer_index: int) -> GameState:
+    """Apply one SHOP purchase: deduct chips, append wrapped card to hand.
+
+    Drives one buyer's choice during the SHOP phase. The driver determines
+    the iteration order via :func:`shop_purchase_order` and calls this once
+    per buying player. Skipping a turn requires no engine call — just omit
+    the player from the iteration.
+
+    Per ``design/state.md`` SHOP step 3, the purchased card "goes to hand
+    (counts against HAND_SIZE; player must discard if over)". This function
+    appends without enforcing the over-cap discard — that's deferred to the
+    BUILD-phase discard surface, mirroring how RESOLVE step 12 refills past
+    HAND_SIZE never down-caps live hands either.
+
+    Raises ``ValueError`` on bad phase, unknown player, out-of-range
+    ``offer_index``, or insufficient chips.
+    """
+    if state.phase is not Phase.SHOP:
+        raise ValueError(f"apply_shop_purchase requires phase=SHOP, got {state.phase}")
+    player_idx = next((i for i, p in enumerate(state.players) if p.id == player_id), None)
+    if player_idx is None:
+        raise ValueError(f"unknown player {player_id!r}")
+    if not (0 <= offer_index < len(state.shop_offer)):
+        raise ValueError(
+            f"offer_index {offer_index} out of range (have {len(state.shop_offer)} offers)"
+        )
+    offer = state.shop_offer[offer_index]
+    player = state.players[player_idx]
+    if player.chips < offer.price:
+        raise ValueError(
+            f"player {player_id!r} cannot afford offer (chips={player.chips}, price={offer.price})"
+        )
+    new_player = player.model_copy(
+        update={
+            "chips": player.chips - offer.price,
+            "hand": player.hand + (offer.card,),
+        }
+    )
+    new_players = state.players[:player_idx] + (new_player,) + state.players[player_idx + 1 :]
+    new_offer = state.shop_offer[:offer_index] + state.shop_offer[offer_index + 1 :]
+    return state.model_copy(update={"players": new_players, "shop_offer": new_offer})
+
+
+def shop_purchase_order(state: GameState) -> tuple[str, ...]:
+    """Return ``Player.id`` tuple in SHOP purchase order.
+
+    Per ``design/state.md`` SHOP step 2: ascending VP, ties broken by lowest
+    chips, ties broken by seat. Pure function — no side effects, no rng.
+    """
+    return tuple(p.id for p in sorted(state.players, key=lambda p: (p.vp, p.chips, p.seat)))
+
+
+def _round_start_post_shop(state: GameState, *, rng: random.Random | None) -> GameState:
+    """Run round_start steps 6-8 from ``design/state.md``.
+
+    Reached from two paths: directly from :func:`enter_round_start` when the
+    SHOP cadence doesn't fire (or no offers available), and indirectly from
+    :func:`complete_shop` once the driver has applied purchases. ``state``
+    must already have ``round_number`` advanced and post-WHILE-tick players.
+    """
     # Step 6: reveal effect card from effect_deck (RUL-47). Recycle
     # effect_discard if the deck is empty per design/effects-inventory.md
     # "Deck-empty reshuffle". ``revealed_effect`` stays None when both piles
@@ -194,7 +322,7 @@ def enter_round_start(state: GameState, *, rng: random.Random | None = None) -> 
     slots = tuple(Slot(name=cs.name, type=cs.type) for cs in condition.slots)
     if not slots:
         raise ValueError(f"condition template {condition.id!r} has no slots")
-    dealer = players[state.dealer_seat]
+    dealer = state.players[state.dealer_seat]
     first_slot = slots[0]
     chosen = legality.first_card_of_type(dealer.hand, first_slot.type)
     if chosen is None:
@@ -208,8 +336,6 @@ def enter_round_start(state: GameState, *, rng: random.Random | None = None) -> 
         )
         return state.model_copy(
             update={
-                "round_number": new_round,
-                "players": players,
                 "phase": Phase.ROUND_START,
                 "active_rule": None,
                 "dealer_seat": new_dealer_seat,
@@ -219,11 +345,11 @@ def enter_round_start(state: GameState, *, rng: random.Random | None = None) -> 
                 "effect_discard": failed_effect_discard,
             }
         )
-
     new_dealer_hand = _remove_first(dealer.hand, chosen)
     new_dealer = dealer.model_copy(update={"hand": new_dealer_hand})
-    players = players[: state.dealer_seat] + (new_dealer,) + players[state.dealer_seat + 1 :]
-
+    players = (
+        state.players[: state.dealer_seat] + (new_dealer,) + state.players[state.dealer_seat + 1 :]
+    )
     filled_first = first_slot.model_copy(update={"filled_by": chosen})
     final_slots = (filled_first,) + slots[1:]
     first_play = Play(player_id=dealer.id, card=chosen, slot=first_slot.name)
@@ -232,10 +358,8 @@ def enter_round_start(state: GameState, *, rng: random.Random | None = None) -> 
         slots=final_slots,
         plays=(first_play,),
     )
-
     primed = state.model_copy(
         update={
-            "round_number": new_round,
             "players": players,
             "phase": Phase.ROUND_START,
             "revealed_effect": revealed_effect,
@@ -544,6 +668,42 @@ def _draw_effect_card(
         discard = []
     drawn = deck.pop()
     return drawn, tuple(deck), tuple(discard)
+
+
+# RUL-51: number of SHOP offers drawn face-up per shop round per
+# `design/state.md` Phase: shop step 1 ("Draw 4 special cards…").
+_SHOP_OFFER_SIZE: int = 4
+
+
+def _draw_shop_offers(
+    pool: tuple[ShopOffer, ...],
+    discard: tuple[ShopOffer, ...],
+    rng: random.Random | None,
+    k: int = _SHOP_OFFER_SIZE,
+) -> tuple[tuple[ShopOffer, ...], tuple[ShopOffer, ...], tuple[ShopOffer, ...]]:
+    """Pop up to ``k`` offers from ``pool``; recycle ``discard`` if empty.
+
+    Returns ``(drawn_offers, new_pool, new_discard)``. When both piles are
+    empty, returns ``((), (), ())``. The recycle shuffles ``discard`` into
+    the pool via ``rng`` and resets the discard before continuing — mirrors
+    :func:`_draw_effect_card` so seeded games stay reproducible. ``rng=None``
+    is tolerated when the recycle does not trigger; reaching it without one
+    raises ``ValueError`` (RUL-54 conditional-substrate rule).
+    """
+    pool_list = list(pool)
+    discard_list = list(discard)
+    drawn: list[ShopOffer] = []
+    while len(drawn) < k:
+        if not pool_list:
+            if not discard_list:
+                break
+            if rng is None:
+                raise ValueError("seeded rng required to recycle shop_discard into shop_pool")
+            pool_list = discard_list
+            rng.shuffle(pool_list)
+            discard_list = []
+        drawn.append(pool_list.pop())
+    return tuple(drawn), tuple(pool_list), tuple(discard_list)
 
 
 def _refill_hands(state: GameState, rng: random.Random | None) -> GameState:

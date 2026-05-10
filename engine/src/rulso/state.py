@@ -179,6 +179,22 @@ class LastRoll(BaseModel):
     dice_count: int
 
 
+class ShopOffer(BaseModel):
+    """One shop offer: a priced :class:`Card` purchasable during the SHOP phase.
+
+    Wraps an existing :class:`Card` payload with a chip ``price``. When a
+    player buys the offer the wrapped ``card`` is appended to ``Player.hand``
+    (counts against ``HAND_SIZE`` per ``design/state.md`` SHOP step 3). Unsold
+    offers move to ``GameState.shop_discard`` and recycle into
+    ``GameState.shop_pool`` on next-shop draw when the pool empties.
+    """
+
+    model_config = _FROZEN
+
+    card: Card
+    price: int
+
+
 class GameState(BaseModel):
     """Top-level immutable game state.
 
@@ -210,6 +226,17 @@ class GameState(BaseModel):
     active_goals: tuple[GoalCard | None, ...] = (None, None, None)
     # RUL-26: SHOP-card pile; populated when SHOP card content lands in M2.
     shop_deck: tuple[Card, ...] = ()
+    # RUL-51: SHOP phase substrate per `design/state.md` Phase: shop.
+    # ``shop_pool`` is the source-of-truth deck of priced offers (loaded from
+    # ``cards.yaml`` at ``start_game``); ``shop_offer`` is the up-to-4
+    # face-up offers during a SHOP round; ``shop_discard`` collects unsold
+    # offers and recycles back into ``shop_pool`` when the pool empties.
+    # ``shop_deck`` above is the original RUL-26 stub kept for compatibility
+    # but unused — the priced offer requires the wider :class:`ShopOffer`
+    # shape rather than a bare :class:`Card`.
+    shop_pool: tuple[ShopOffer, ...] = ()
+    shop_offer: tuple[ShopOffer, ...] = ()
+    shop_discard: tuple[ShopOffer, ...] = ()
     active_rule: RuleBuilder | None = None
     persistent_rules: tuple[PersistentRule, ...] = ()
     last_roll: LastRoll | None = None
