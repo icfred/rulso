@@ -46,14 +46,16 @@ from rulso.state import (
     Slot,
 )
 
-# --- M1 stubs that survive RUL-18 -------------------------------------------
-# Real effect-card resolution lands with the effect-card catalogue (M2). Until
-# then the round still reveals a placeholder so ``revealed_effect`` is non-None
-# during BUILD/RESOLVE — narration code reads it.
+# --- Round-flow placeholder effect card -------------------------------------
+# Round-flow draws an effect card from ``state.effect_deck`` at round_start
+# step 6 in a follow-up Phase 3 ticket. Until then the round reveals this
+# NOOP placeholder so ``revealed_effect`` is non-None during BUILD/RESOLVE
+# (narration code reads it) and the dispatcher returns state unchanged when
+# the round resolves.
 _M1_EFFECT_CARD: Card = Card(
     id="m1_stub_effect",
-    type=CardType.MODIFIER,
-    name="EFFECT",
+    type=CardType.EFFECT,
+    name="NOOP",
 )
 
 
@@ -84,6 +86,9 @@ def start_game(seed: int = 0) -> GameState:
         players.append(Player(id=f"p{i}", seat=i, hand=hand))
     remaining_deck = tuple(deck_list[cursor:])
 
+    # RUL-39: seed effect_deck from cards.yaml. Round-flow draw lands later.
+    effect_deck = cards_module.load_effect_cards()
+
     return GameState(
         phase=Phase.ROUND_START,
         round_number=0,
@@ -91,6 +96,7 @@ def start_game(seed: int = 0) -> GameState:
         active_seat=0,
         players=tuple(players),
         deck=remaining_deck,
+        effect_deck=effect_deck,
     )
 
 

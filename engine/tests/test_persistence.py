@@ -29,10 +29,23 @@ from rulso.state import (
     Slot,
 )
 
+# RUL-39: persistent rules route through ``effects.resolve_if_rule`` which
+# now dispatches the round's ``revealed_effect``. Pin ``GAIN_VP:1`` so the
+# RUL-32 fire / dormancy / FIFO assertions (``vp == 1`` after a fire) keep
+# their semantic post-dispatcher. The persistent-rule WHEN/WHILE branches
+# are orthogonal to the effect dispatcher; pinning the effect card lets the
+# existing tests target the rule lifecycle without test-logic churn.
+_GAIN_VP_1 = Card(id="eff.vp.gain.1", type=CardType.EFFECT, name="GAIN_VP:1")
+
 
 def _state(round_number: int = 0) -> GameState:
     players = tuple(Player(id=f"p{i}", seat=i) for i in range(PLAYER_COUNT))
-    return GameState(players=players, round_number=round_number, dealer_seat=0)
+    return GameState(
+        players=players,
+        round_number=round_number,
+        dealer_seat=0,
+        revealed_effect=_GAIN_VP_1,
+    )
 
 
 def _rule(kind: RuleKind = RuleKind.WHEN) -> RuleBuilder:
