@@ -6,7 +6,7 @@ import random
 
 import pytest
 
-from rulso.bots.random import DiscardRedraw, Pass, PlayCard, choose_action
+from rulso.bots.random import PLAY_BIAS, DiscardRedraw, Pass, PlayCard, choose_action
 from rulso.state import (
     Card,
     CardType,
@@ -284,6 +284,36 @@ def test_invariant_never_returns_illegal_action() -> None:
         else:
             assert isinstance(action, Pass), f"seed={seed}: unexpected action type {type(action)}"
             pytest.fail(f"seed={seed}: Pass returned but legal plays exist")
+
+
+# --- Play-over-discard bias ---------------------------------------------------
+
+
+def test_play_preferred_over_discard_when_both_legal() -> None:
+    """When both pools are non-empty the bot picks plays >70% of the time.
+
+    Threshold is loose enough to absorb sampling noise (expected rate is
+    ``PLAY_BIAS`` = 0.85; std over 1000 trials ≈ 1.1pp), tight enough to
+    catch a regression to uniform sampling.
+    """
+    cards = (
+        Card(id="s1", type=CardType.SUBJECT, name="A"),
+        Card(id="n1", type=CardType.NOUN, name="B"),
+    )
+    slots = (
+        Slot(name="subject", type=CardType.SUBJECT),
+        Slot(name="noun", type=CardType.NOUN),
+    )
+    state = _build_state(player_hand=cards, slots=slots, chips=50)
+    play_count = sum(
+        1
+        for seed in range(1000)
+        if isinstance(choose_action(state, "p1", random.Random(seed)), PlayCard)
+    )
+    assert play_count > 700, (
+        f"play_card chosen {play_count}/1000; expected ~{int(PLAY_BIAS * 1000)} "
+        f"(bias missing or reverted to uniform)"
+    )
 
 
 # --- Non-BUILD phase ----------------------------------------------------------
