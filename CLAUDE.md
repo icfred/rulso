@@ -10,24 +10,23 @@ Design stage. No code yet. Locked decisions below; details in linked docs.
 
 | File | Purpose |
 |---|---|
-| `README.md` | Plain-English vision. **Read first.** (Same content as the public-facing GitHub README.) |
+| `PROJECT_CONTEXT.md` | **Locked-decisions digest** — game design, stack, workflow conventions, substrate watchpoints. Read this for "what's been decided". |
+| `STATUS.md` | **Current sprint state** — in flight, blocked chain, follow-ups. Read this for "what's currently happening". |
+| `README.md` | Plain-English vision. (Same content as the public-facing GitHub README.) |
 | `roadmap.md` | M1–M5 milestone definitions |
 | `tech.md` | Stack, architecture, repo layout |
 | `aesthetic.md` | Palette, type, animation, sound |
-| `design/state.md` | Round flow, phases, state machine — the contract |
+| `design/state.md` | Round flow, phases, state machine — the canonical engine contract |
 | `design/cards.yaml` | Card definitions (TBD) |
 | `workflows/orchestrator.md` | How the orchestrating agent decomposes work and dispatches sub-agents |
 | `workflows/feature-work.md` | Per-ticket workflow every sub-agent follows |
 | `workflows/pr-merge.md` | How the orchestrator merges sub-agent PRs |
+| `docs/workflow_lessons.md` | Captured workflow misses |
 | `docs/` | Agent-curated, AI-optimized feature documentation |
 
 ## Critical context
 
-- **Digital-first.** No paper prototypes — explicitly ruled out.
-- **Smart bots are non-negotiable.** Heuristic bots won't surface design flaws in solo play. ISMCTS at M3.
-- **Substrate before content.** Lock fundamentals (state, resources, win condition) before drilling into card content.
-- **Balatro is a reference, not a target.** Aesthetic is cool-mainframe Aegean — *don't* clone Balatro's warm arcade vibe.
-- **PRs are checkpoints, not reviews.** The orchestrator merges them to keep parallel agents from clobbering each other. PR size doesn't matter.
+The project's locked decisions, substrate watchpoints, and pointers to canonical sources live in `PROJECT_CONTEXT.md`. Read it before any work. The current sprint's in-flight tickets, blocked chains, and follow-ups live in `STATUS.md` — read it on every fresh orchestrator chat.
 
 ## How orchestration works
 
@@ -45,29 +44,6 @@ When you (the current session) are asked to start work, decompose, or check stat
 3. Produce hand-over prompts for the user to paste into new chats.
 4. When asked "anything done?" / "merge PRs", run the merge sweep per `workflows/pr-merge.md`.
 
-## Core locked decisions
+## Locked decisions
 
-*Game design:*
-- 4 players, 50 starting chips, first to 3 VP, hand of 7 mixed cards
-- Card types: SUBJECT, NOUN, MODIFIER + rare JOKER
-- Rule lifetimes: IF (one-shot) / WHEN (persists, fires once) / WHILE (persists, fires repeatedly)
-- Numbers via dice (1d6 or 2d6 player choice) when playing comparator MODs
-- 3 face-up goal cards (Twilight Imperium-style, replenished on claim)
-- Floating labels: THE LEADER / THE WOUNDED / THE GENEROUS / THE CURSED
-- Status tokens: BURN / MUTE / BLESSED / MARKED / CHAINED
-- SHOP round every 3 rounds; lowest-VP buys first
-
-*Tech:*
-- Engine: Python 3.12 + Pydantic + asyncio + websockets, ISMCTS bots
-- Client: TypeScript + Vite + PixiJS v8 (no React)
-- Protocol: JSON over websocket; client types generated from Pydantic models
-- Lint/format: Biome for client (TS/JS); Ruff for engine (Python)
-- Aesthetic: Aegean palette, JetBrains Mono for rule text, Inter for chrome, 16px pixel grid
-
-*Workflow conventions:*
-- Linear ticket prefix: `RUL-`
-- Branch naming: `RUL-<id>-<short-slug>`
-- Commit prefix: `RUL-<id>: ` (enforced by `.githooks/commit-msg`)
-- Worktrees live at `.worktrees/RUL-<id>-<slug>` (gitignored)
-- Linear projects mirror areas: Engine, Client, Bots, Design, Infra
-- Status flow: Backlog → Ready → In Progress → In Review → Done
+See `PROJECT_CONTEXT.md`. This file is intentionally a pointer, not a duplicate.

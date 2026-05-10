@@ -55,8 +55,21 @@ Both must exit clean. If they don't, fix the underlying issue (don't suppress).
     ```
     gh pr create --title "<TICKET-ID>: <ticket title>" --body "Linear: <ticket URL>"
     ```
-15. In Linear: move the ticket from `In Progress` to `In Review`. Add a comment with the PR URL.
-16. **Stop.** Don't continue working. Don't pick up another ticket. Don't try to merge your own PR. The orchestrator (a different session) handles merging in a sweep.
+15. In Linear: move the ticket from `In Progress` to `In Review` and add a comment with the PR URL.
+16. Emit the **HANDBACK** block as the last thing in your final message — the user pastes it back into the orchestrator chat. Format (verbatim):
+    ```
+    HANDBACK <TICKET-ID>
+    PR: <url>
+    Status: ready-to-merge | partial | blocked
+    Flags:
+    - <new follow-up tickets to file>
+    - <deviations from DoD or scope cuts>
+    - <shared-interface changes (state.py / protocol.py / design docs)>
+    - <NotImplementedError placeholders or TODOs left for later milestones>
+    - <anything the orchestrator should know before merging or dispatching dependents>
+    ```
+    If nothing to flag: `Flags: none`. One line per bullet. Don't restate the diff.
+17. **Stop.** Don't continue working. Don't pick up another ticket. Don't try to merge your own PR. The orchestrator (a different session) handles merging in a sweep.
 
 ## If the task is too big
 

@@ -30,7 +30,7 @@ When the user asks to start a milestone or feature:
    - **Dependencies**: Linear "Blocked by" relations to other tickets
 5. Create the parent milestone Issue in Linear if it doesn't exist.
 6. Create sub-issues under it.
-7. State: `Ready` for unblocked tasks; `Backlog` for blocked.
+7. State: `Todo` for unblocked tasks; `Backlog` for blocked.
 
 ### Parallelization heuristic
 
@@ -47,7 +47,7 @@ When in doubt: serial is cheaper than untangling.
 
 When the user is ready to start work — usually phrased "give me the next prompt(s)" or "I have N free chats":
 
-1. Pull `Ready` tickets from Linear, prioritized by dependency depth (unblockers first).
+1. Pull `Todo` tickets from Linear, prioritized by dependency depth (unblockers first).
 2. Pick up to N tickets where N = the number the user wants to run in parallel. Only pick `parallel-safe` ones if N > 1, unless the user overrides.
 3. For each picked ticket, output a prompt block in this exact format:
 
@@ -80,12 +80,27 @@ Finish
 - Push the branch
 - Create the PR: `gh pr create --title "<TICKET ID>: <TICKET TITLE>" --body "Linear: <ticket URL>"`
 - Move the Linear ticket to "In Review" and attach the PR URL as a Linear comment
+- Emit the HANDBACK block (below) as the LAST thing in your final message — the user pastes it into the orchestrator chat.
 - Stop. Do not return work to me. The orchestrator (a different session) merges PRs.
+
+HANDBACK (emit verbatim, fill in the fields)
+```
+HANDBACK <TICKET ID>
+PR: <url>
+Status: ready-to-merge | partial | blocked
+Flags:
+- <new follow-up tickets to file, with one-line context>
+- <deviations from DoD or scope cuts>
+- <shared-interface changes (state.py / protocol.py / design docs)>
+- <NotImplementedError placeholders or TODOs left for later milestones>
+- <anything the orchestrator should know before merging or dispatching dependents>
+```
+If nothing to flag: write `Flags: none`. Keep each bullet to one line. Don't restate the diff — the orchestrator reads the PR.
 
 Follow workflows/feature-work.md exactly.
 ````
 
-4. Move each handed-over ticket from `Ready` to `In Progress` in Linear (reflects "prompt is out, waiting on a chat").
+4. Move each handed-over ticket from `Todo` to `In Progress` in Linear (reflects "prompt is out, waiting on a chat").
 5. Tell the user how many prompts you produced and remind them: each prompt goes in a fresh chat.
 
 ---
@@ -95,8 +110,8 @@ Follow workflows/feature-work.md exactly.
 1. Query Linear for tickets in `In Review`. For each, find the linked PR.
 2. For each PR: follow `workflows/pr-merge.md`.
 3. Move merged tickets to `Done`.
-4. Promote dependents whose blockers are now `Done` to `Ready`.
-5. Summarize for the user: merged tickets, new `Ready` tickets, anything still in `In Review` that didn't merge cleanly.
+4. Promote dependents whose blockers are now `Done` to `Todo`.
+5. Summarize for the user: merged tickets, new `Todo` tickets, anything still in `In Review` that didn't merge cleanly.
 
 ---
 
@@ -104,8 +119,8 @@ Follow workflows/feature-work.md exactly.
 
 When the user asks "what's next" / "what's left" / "status":
 
-1. List Linear Issues by state: `In Progress` (max 5), `In Review` (all), `Ready` (top 5), `Backlog` (count only).
-2. Identify any blocked tickets whose blockers are now `Done` — promote to `Ready`.
+1. List Linear Issues by state: `In Progress` (max 5), `In Review` (all), `Todo` (top 5), `Backlog` (count only).
+2. Identify any blocked tickets whose blockers are now `Done` — promote to `Todo`.
 3. Summarize: what's running, what's queued, what's blocked, what just merged.
 
 ---
