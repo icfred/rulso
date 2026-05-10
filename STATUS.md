@@ -17,17 +17,17 @@ Linear board: https://linear.app/rulso (team `RUL`, projects: Engine / Infra / B
 
 ## In flight
 
-**RUL-34** — Re-contract M1.5 watchable smoke for M2 transition (Phase 3 prep). Hand-over emitted; awaiting worker dispatch. Phase 3 fan blocked until this lands (see "Phase 3 prep" below).
+None. **Phase 3 fan unblocked** — RUL-34 (M1.5 smoke re-contract) merged 2026-05-10. Awaiting user sign-off on Phase 3 ticket shape (D–K, see proposal below) before dispatch.
 
-M2 Phase 2 SHIPPED (RUL-31 cards/state.py substrate, RUL-32 WHEN+WHILE lifecycle, RUL-33 GENEROUS+CURSED labels — all merged 2026-05-10).
+M2 Phase 2 SHIPPED (RUL-31 cards/state.py substrate, RUL-32 WHEN+WHILE lifecycle, RUL-33 GENEROUS+CURSED labels — all merged 2026-05-10). M1.5 smoke re-contract SHIPPED (RUL-34, merged 2026-05-10).
 
-## Phase 3 prep — why RUL-34 must land first
+## Phase 3 prep — why RUL-34 landed first
 
-RUL-31's worker probe found that even silently-safe deck additions (ANYONE/EACH no-op via empty scope; JOKERs sit in-hand) regress the M1.5 watchable smoke 6/10 → 0/10 winners by diluting the rule-fire pool. Each Phase 3 ticket extends `cards.yaml deck:` for its consumer, so the smoke would go red on the first Phase 3 PR even when the PR is correct.
+RUL-31's worker probe found that even silently-safe deck additions (ANYONE/EACH no-op via empty scope; JOKERs sit in-hand) regress the M1.5 watchable smoke 6/10 → 1-2/10 winners by diluting the rule-fire pool. Each Phase 3 ticket extends `cards.yaml deck:` for its consumer, so the smoke would have gone red on the first Phase 3 PR even when the PR is correct.
 
-**RUL-34** re-contracts the M1.5 smoke as a regression detector during Phase 3 (drops `_MIN_WINNERS` to 0; widens resolve floors to absorb dilution). The "real watchable bar" moves to **RUL-35** (M2 watchable smoke), which lands as the Phase 3 tail.
+**RUL-34** re-contracted the M1.5 smoke as a regression detector during Phase 3: dropped `_MIN_WINNERS` to 0; widened `_MIN_RUNS_WITH_RESOLVE` to 7 and `_MIN_TOTAL_RESOLVES` to 34 (worst-case × 0.7); deleted `test_at_least_one_seed_produces_a_winner`. The "real watchable bar" moves to **RUL-35** (M2 watchable smoke, Backlog), which lands as the Phase 3 tail and reclaims the winner-emergence assertion on the fully-wired M2 deck.
 
-Sequence: RUL-34 → merge → Phase 3 fan (D–K, parallel) → merge → RUL-35.
+Sequence: ~~RUL-34~~ → Phase 3 fan (D–K, parallel) → merge → RUL-35.
 
 ## M2 Phase 2 Done summary
 
