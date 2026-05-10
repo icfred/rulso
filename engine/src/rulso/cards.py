@@ -39,7 +39,7 @@ from typing import Literal, NamedTuple
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from rulso.state import Card, CardType, GoalCard, RuleKind, ScopeMode
+from rulso.state import Card, CardType, GoalCard, RuleKind, ScopeMode, ShopOffer
 
 # engine/src/rulso/cards.py → parents[3] = repo root
 _REPO_ROOT: Path = Path(__file__).resolve().parents[3]
@@ -114,6 +114,23 @@ class _DeckEntry(BaseModel):
     copies: int = Field(gt=0)
 
 
+class _ShopEntry(BaseModel):
+    """One ``shop_cards:`` row — a SHOP offer with chip price + payload type.
+
+    The yaml shape mirrors :class:`ShopOffer`: a priced wrapper around a
+    ``Card`` payload. ``payload_type`` is the :class:`CardType` of the card
+    delivered to the buyer's hand — restricted to types that the BUILD-phase
+    legality checks already accept so the purchased card behaves like any
+    other card once held.
+    """
+
+    model_config = _FROZEN
+    id: str
+    name: str
+    price: int = Field(ge=0)
+    payload_type: CardType
+
+
 class _Schema(BaseModel):
     model_config = _FROZEN
     condition_cards: tuple[ConditionTemplate, ...]
@@ -124,6 +141,9 @@ class _Schema(BaseModel):
     joker_cards: tuple[_CardEntry, ...] = ()
     effect_cards: tuple[_CardEntry, ...] = ()
     goal_cards: tuple[GoalCard, ...] = ()
+    # RUL-51: SHOP offers — empty by default. M2 ships the cadence + ordering
+    # substrate with an empty pool; content lands in a follow-up ticket.
+    shop_cards: tuple[_ShopEntry, ...] = ()
     deck: tuple[_DeckEntry, ...]
 
 
@@ -165,6 +185,24 @@ def load_goal_cards(path: Path | None = None) -> tuple[GoalCard, ...]:
     ``design/goals-inventory.md``). They are NOT part of the main deck.
     """
     return _read(path).goal_cards
+
+
+def load_shop_offers(path: Path | None = None) -> tuple[ShopOffer, ...]:
+    """Return every SHOP offer defined in ``cards.yaml``.
+
+    Shop offers seed ``GameState.shop_pool``; face-up draws populate
+    ``shop_offer`` during the SHOP phase (per ``design/state.md`` Phase: shop).
+    They are NOT part of the main deck. M2 ships with no shop offers yet —
+    the empty default exercises the SHOP cadence/ordering substrate without
+    materially affecting game flow.
+    """
+    return tuple(
+        ShopOffer(
+            card=Card(id=entry.id, name=entry.name, type=entry.payload_type),
+            price=entry.price,
+        )
+        for entry in _read(path).shop_cards
+    )
 
 
 def build_default_deck(

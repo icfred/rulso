@@ -17,8 +17,22 @@ from collections.abc import Sequence
 from typing import TextIO
 
 from rulso.bots import human as human_bot
-from rulso.bots.random import DiscardRedraw, Pass, PlayCard, PlayJoker, choose_action
-from rulso.rules import advance_phase, pass_turn, play_card, play_joker
+from rulso.bots.random import (
+    DiscardRedraw,
+    Pass,
+    PlayCard,
+    PlayJoker,
+    choose_action,
+    select_purchase,
+)
+from rulso.rules import (
+    advance_phase,
+    apply_shop_purchase,
+    pass_turn,
+    play_card,
+    play_joker,
+    shop_purchase_order,
+)
 from rulso.rules import start_game as _start_game
 from rulso.state import (
     PLAYER_COUNT,
@@ -89,9 +103,14 @@ def run_game(
             prior_dealer = state.dealer_seat
             state = advance_phase(
                 state, rng=effect_rng
-            )  # ROUND_START → BUILD or back to ROUND_START on dealer-no-seed
+            )  # ROUND_START → BUILD, SHOP, or back to ROUND_START on dealer-no-seed
             if state.phase is Phase.ROUND_START:
                 _narrate_dealer_seed_failure(out, state, prior_dealer)
+                continue
+            if state.phase is Phase.SHOP:
+                # RUL-51: defer round_start narration until SHOP completes and
+                # the dealer either seeds slot 0 or fails. The SHOP branch
+                # below picks up the same state on the next loop iteration.
                 continue
             _narrate_round_start(out, state)
         elif state.phase is Phase.BUILD:
@@ -110,6 +129,17 @@ def run_game(
         elif state.phase is Phase.RESOLVE:
             _narrate_resolve(out, state)
             state = advance_phase(state, rng=refill_rng)  # RESOLVE → ROUND_START or END
+        elif state.phase is Phase.SHOP:
+            # RUL-51: SHOP fires when ``round_number % SHOP_INTERVAL == 0`` and
+            # at least one offer is available. Drive purchases in canonical
+            # order (VP asc, chips asc, seat asc) and finalise via advance_phase.
+            prior_dealer = state.dealer_seat
+            state = _drive_shop(out, state, rng)
+            state = advance_phase(state, rng=effect_rng)  # SHOP → BUILD or ROUND_START
+            if state.phase is Phase.ROUND_START:
+                _narrate_dealer_seed_failure(out, state, prior_dealer)
+                continue
+            _narrate_round_start(out, state)
         else:
             _emit(out, "unhandled_phase", phase=state.phase.value)
             return 1
@@ -244,6 +274,42 @@ def _drive_build_turn(
         )
         return play_joker(state, card)
     raise AssertionError(f"unhandled action variant {type(action).__name__}")
+
+
+def _drive_shop(out: TextIO, state: GameState, rng: random.Random) -> GameState:
+    """Drive one SHOP phase to completion (RUL-51).
+
+    Emits ``shop_open`` once, then for each player in
+    :func:`rulso.rules.shop_purchase_order` either a ``shop_purchase`` (when
+    the bot picks an affordable offer) or a ``shop_skip`` (when no offer is
+    affordable). Closes with ``shop_close`` reporting the unsold offer count.
+    The caller is responsible for the post-SHOP :func:`advance_phase` that
+    resumes round_start steps 6-8.
+    """
+    _emit(
+        out,
+        "shop_open",
+        round=state.round_number,
+        offer_count=len(state.shop_offer),
+    )
+    order = shop_purchase_order(state)
+    for player_id in order:
+        offer_index = select_purchase(state, player_id, rng)
+        if offer_index is None:
+            _emit(out, "shop_skip", round=state.round_number, player=player_id)
+            continue
+        offer = state.shop_offer[offer_index]
+        _emit(
+            out,
+            "shop_purchase",
+            round=state.round_number,
+            player=player_id,
+            offer=offer.card.id,
+            price=offer.price,
+        )
+        state = apply_shop_purchase(state, player_id, offer_index)
+    _emit(out, "shop_close", round=state.round_number, unsold=len(state.shop_offer))
+    return state
 
 
 def _narrate_round_start(out: TextIO, state: GameState) -> None:

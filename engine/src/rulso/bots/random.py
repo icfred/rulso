@@ -211,3 +211,27 @@ def _enumerate_discards(player: Player) -> list[DiscardRedraw]:
         for combo in itertools.combinations(player.hand, k):
             discards.append(DiscardRedraw(card_ids=tuple(c.id for c in combo)))
     return discards
+
+
+def select_purchase(state: GameState, player_id: str, rng: random.Random) -> int | None:
+    """Pick a SHOP offer index for ``player_id``, or ``None`` to skip (RUL-51).
+
+    Heuristic per the RUL-51 hand-over: cheapest affordable offer wins; ties
+    broken by lowest offer index (stable, deterministic). Skips when no
+    affordable offer exists. The ``rng`` parameter is accepted to keep the
+    bot-driver signature uniform with :func:`choose_action`; it is not
+    consumed by the current heuristic (all decisions are deterministic given
+    the offer set).
+    """
+    if state.phase is not Phase.SHOP:
+        return None
+    player = _find_player(state, player_id)
+    cheapest_index: int | None = None
+    cheapest_price: int | None = None
+    for i, offer in enumerate(state.shop_offer):
+        if offer.price > player.chips:
+            continue
+        if cheapest_price is None or offer.price < cheapest_price:
+            cheapest_price = offer.price
+            cheapest_index = i
+    return cheapest_index

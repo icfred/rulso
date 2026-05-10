@@ -316,13 +316,18 @@ def test_advance_from_lobby_enters_round_start() -> None:
     assert state.round_number == 1
 
 
-def test_advance_from_shop_raises_not_implemented() -> None:
+def test_advance_from_shop_with_empty_offer_resumes_round_start() -> None:
+    """RUL-51: SHOP can be entered manually with no offers; advance_phase
+    treats the empty offer as "all unsold" and resumes round_start steps 6-8
+    (dealer-no-seed in this stub state → ROUND_START with rotated dealer)."""
     state = GameState(
         phase=Phase.SHOP,
         players=tuple(Player(id=f"p{i}", seat=i) for i in range(PLAYER_COUNT)),
     )
-    with pytest.raises(NotImplementedError, match="shop"):
-        advance_phase(state)
+    out = advance_phase(state)
+    assert out.phase is Phase.ROUND_START
+    # Dealer rotated because no SUBJECT card was held to seed slot 0.
+    assert out.dealer_seat == 1
 
 
 def test_advance_from_end_is_idempotent() -> None:
