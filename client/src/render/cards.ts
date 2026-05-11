@@ -11,9 +11,11 @@
 //   - EFFECT   : "<KIND>[:<MAG>][@<TARGET_MOD>]" — mirrors
 //                `_parse_effect_name` in `engine/src/rulso/effects.py`.
 //
-// SUBJECT player ids are rendered absolutely (e.g. "Player 0" for "p0") —
-// matches the engine's absolute seat referencing rather than seat-relative
-// "You", to keep client/engine vocab in lock-step.
+// SUBJECT player ids render absolutely (`Player N` for `pN`) by default. The
+// optional ``humanSeat`` argument flips the human's own seat to seat-relative
+// `You` — passing it everywhere a card is rendered makes the human seat read
+// naturally in transcript / opponents / rule preview / actions without
+// drifting client/engine vocab for non-human seats.
 
 import type { Card } from "../types/envelopes";
 
@@ -33,10 +35,10 @@ const OPERATORS: Record<string, string> = {
   AT_LEAST: "AT LEAST",
 };
 
-export function renderCard(card: Card): string {
+export function renderCard(card: Card, humanSeat?: number | null): string {
   switch (card.type) {
     case "SUBJECT":
-      return renderSubject(card);
+      return renderSubject(card, humanSeat);
     case "NOUN":
       return card.name;
     case "MODIFIER":
@@ -50,9 +52,15 @@ export function renderCard(card: Card): string {
   }
 }
 
-function renderSubject(card: Card): string {
+export function renderSeat(seat: number, humanSeat?: number | null): string {
+  return humanSeat !== null && humanSeat !== undefined && seat === humanSeat
+    ? "You"
+    : `Player ${seat}`;
+}
+
+function renderSubject(card: Card, humanSeat?: number | null): string {
   const match = /^p(\d+)$/.exec(card.name);
-  if (match) return `Player ${match[1]}`;
+  if (match) return renderSeat(Number(match[1]), humanSeat);
   if (card.name === "EACH_PLAYER") return "EACH PLAYER";
   return card.name;
 }
