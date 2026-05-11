@@ -251,7 +251,7 @@ async def _run_game_loop(
 
     state = start_game(seed)
     state_ref["state"] = state
-    await _send_envelope(ws, StateBroadcast(state=state))
+    await _send_envelope(ws, _build_state_broadcast(state, human_seat))
 
     while state.phase is not Phase.END:
         if state.phase is Phase.ROUND_START:
@@ -264,12 +264,12 @@ async def _run_game_loop(
         elif state.phase is Phase.RESOLVE:
             state = advance_phase(state, rng=refill_rng)
         elif state.phase is Phase.SHOP:
-            state = await _drive_shop(ws, state, rng)
+            state = await _drive_shop(ws, state, rng, human_seat=human_seat)
             state = advance_phase(state, rng=effect_rng)
         else:
             raise AssertionError(f"unhandled phase {state.phase}")
         state_ref["state"] = state
-        await _send_envelope(ws, StateBroadcast(state=state))
+        await _send_envelope(ws, _build_state_broadcast(state, human_seat))
         # Give the reader task an explicit chance to drain a pending submission
         # against the latest state. ``ws.send`` already yields, but on fast
         # localhost the loop can race through a full bot rotation before any
@@ -348,7 +348,9 @@ def _apply_action(
     raise AssertionError(f"unhandled action variant {type(action).__name__}")
 
 
-async def _drive_shop(ws: Any, state: GameState, rng: random.Random) -> GameState:
+async def _drive_shop(
+    ws: Any, state: GameState, rng: random.Random, *, human_seat: int
+) -> GameState:
     """Drive every SHOP purchase in canonical order; broadcast after each.
 
     All seats (including the human's) are bot-driven in SHOP per ADR-0008:
@@ -361,8 +363,23 @@ async def _drive_shop(ws: Any, state: GameState, rng: random.Random) -> GameStat
         if offer_index is None:
             continue
         state = apply_shop_purchase(state, player_id, offer_index)
-        await _send_envelope(ws, StateBroadcast(state=state))
+        await _send_envelope(ws, _build_state_broadcast(state, human_seat))
     return state
+
+
+def _build_state_broadcast(state: GameState, human_seat: int) -> StateBroadcast:
+    """Wrap ``state`` in a :class:`StateBroadcast`, attaching legal actions only
+    when the human seat is active in BUILD.
+
+    Re-uses :func:`enumerate_legal_actions` exactly as the human-turn driver
+    does. Re-cost is O(slots × hand) — see ADR-0008 follow-up notes for the
+    caching ticket. None on every other broadcast (bot turns, non-BUILD
+    phases, terminal state).
+    """
+    if state.phase is not Phase.BUILD or state.active_seat != human_seat:
+        return StateBroadcast(state=state)
+    legal = enumerate_legal_actions(state, state.players[human_seat])
+    return StateBroadcast(state=state, legal_actions=tuple(legal))
 
 
 async def _send_envelope(ws: Any, envelope: Any) -> None:

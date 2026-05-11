@@ -59,6 +59,48 @@
         white-space: pre-wrap;
         word-break: break-word;
       }
+      pre.outgoing {
+        border-color: #1f6feb;
+        background: #0c1f3d;
+      }
+      #actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        padding: 8px;
+        margin-bottom: 8px;
+        border: 1px dashed #30363d;
+        border-radius: 4px;
+        background: #161b22;
+        min-height: 32px;
+      }
+      #actions:empty::before {
+        content: "waiting for human turn…";
+        color: #6e7681;
+        font-size: 12px;
+        font-style: italic;
+      }
+      #actions button {
+        font: inherit;
+        font-size: 11px;
+        padding: 4px 8px;
+        background: #21262d;
+        color: #c9d1d9;
+        border: 1px solid #30363d;
+        border-radius: 3px;
+        cursor: pointer;
+        text-align: left;
+        max-width: 100%;
+        word-break: break-all;
+      }
+      #actions button:hover {
+        background: #30363d;
+        border-color: #6e7681;
+      }
+      #actions button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
     </style>
   </head>
   <body>
@@ -67,6 +109,7 @@
       <span id="status" data-state="connecting">connecting</span>
       <span id="seat"></span>
     </header>
+    <div id="actions"></div>
     <main id="app"></main>
     <script type="module" src="/src/main.ts"></script>
   </body>

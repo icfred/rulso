@@ -292,6 +292,58 @@ async def test_protocol_invalid_rejection_on_unknown_envelope_type() -> None:
             pytest.fail("never received PROTOCOL_INVALID within 60 frames")
 
 
+# --- legal_actions broadcast field ----------------------------------------
+
+
+async def test_human_build_broadcasts_carry_legal_actions() -> None:
+    """When the human seat is active in BUILD, broadcasts include a non-empty
+    ``legal_actions`` tuple. Bot turns and non-BUILD broadcasts carry ``None``.
+    """
+    async with _server_running(seed=0, human_seat=0) as port:
+        async with websockets.connect(f"ws://127.0.0.1:{port}") as ws:
+            await _recv_hello(ws)
+            for _ in range(200):
+                msg = await _recv_envelope(ws)
+                if not isinstance(msg, StateBroadcast):
+                    continue
+                state = msg.state
+                if state.phase is Phase.BUILD and state.active_seat == 0:
+                    assert msg.legal_actions is not None
+                    assert len(msg.legal_actions) > 0
+                    return
+                # Anything else — bot BUILD or non-BUILD phase — carries None.
+                assert msg.legal_actions is None
+            pytest.fail("never observed human BUILD broadcast within 200 frames")
+
+
+async def test_terminal_state_broadcast_has_no_legal_actions() -> None:
+    """The terminal ``Phase.END`` broadcast carries ``legal_actions = None``."""
+    async with _server_running(seed=0, human_seat=0) as port:
+        async with websockets.connect(f"ws://127.0.0.1:{port}") as ws:
+            await _recv_hello(ws)
+            try:
+                async with asyncio.timeout(_END_TO_END_TIMEOUT):
+                    while True:
+                        msg = await _recv_envelope(ws)
+                        if not isinstance(msg, StateBroadcast):
+                            continue
+                        if msg.state.phase is Phase.END:
+                            assert msg.legal_actions is None
+                            return
+                        if msg.state.phase is Phase.BUILD and msg.state.active_seat == 0:
+                            player = msg.state.players[0]
+                            legal = enumerate_legal_actions(msg.state, player)
+                            if legal:
+                                chosen = next(
+                                    (a for a in legal if isinstance(a, PlayCard)),
+                                    legal[0],
+                                )
+                                await ws.send(ActionSubmit(action=chosen).model_dump_json())
+            except websockets.ConnectionClosed:
+                pass
+    pytest.fail("game never reached Phase.END within timeout")
+
+
 # --- end-to-end ------------------------------------------------------------
 
 

@@ -2,10 +2,11 @@
 //
 // Opens one connection to the engine's `rulso-server` (default ws://localhost:8765),
 // parses inbound JSON via the generated `ServerEnvelope` union, and dispatches
-// each envelope to a callback. Read-only for this ticket — submitting actions
-// (`ActionSubmit`) is the next M3 sub-issue.
+// each envelope to a callback. `send` serialises a `ClientEnvelope` (e.g.
+// `ActionSubmit`) onto the same connection — used by the input layer to
+// submit the human's chosen action (RUL-67).
 
-import type { ServerEnvelope } from "./types/envelopes";
+import type { ClientEnvelope, ServerEnvelope } from "./types/envelopes";
 
 export type ConnectionStatus = "connecting" | "connected" | "closed" | "error";
 
@@ -42,6 +43,14 @@ export function connect(url: string, handlers: NetHandlers): WebSocket {
   });
 
   return ws;
+}
+
+// Serialise a `ClientEnvelope` and send it on the open connection. The engine
+// re-validates structurally and re-checks legality on receipt; we type-check
+// the envelope shape here so the compiler catches drift between the generated
+// types and the call site.
+export function send(ws: WebSocket, envelope: ClientEnvelope): void {
+  ws.send(JSON.stringify(envelope));
 }
 
 // Narrow an inbound JSON string to a `ServerEnvelope`. Returns `null` on JSON
