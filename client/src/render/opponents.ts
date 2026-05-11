@@ -8,19 +8,20 @@
 // them on `state.labels`.
 
 import type { GameState, Player } from "../types/envelopes";
+import { renderSeat } from "./cards";
 
 export function renderOpponents(state: GameState, humanSeat: number): string[] {
   return (state.players ?? [])
     .filter((p) => p.seat !== humanSeat)
-    .map((p) => renderOne(p, labelSuffix(state, p)));
+    .map((p) => renderOne(p, labelSuffix(state, p), humanSeat));
 }
 
-function renderOne(player: Player, labelSuffix: string): string {
+function renderOne(player: Player, labelSuffix: string, humanSeat: number): string {
   const labels = labelSuffix ? ` [${labelSuffix}]` : "";
   const statusText = renderStatus(player);
   const status = statusText ? `, status: ${statusText}` : "";
   const hand = player.hand?.length ?? 0;
-  return `Player ${player.seat}${labels} — chips: ${player.chips ?? 0}, VP: ${player.vp ?? 0}, hand: ${hand}${status}`;
+  return `${renderSeat(player.seat, humanSeat)}${labels} — chips: ${player.chips ?? 0}, VP: ${player.vp ?? 0}, hand: ${hand}${status}`;
 }
 
 function renderStatus(player: Player): string {

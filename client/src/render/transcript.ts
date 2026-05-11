@@ -20,25 +20,45 @@
 // chips)" while the engine charged 7; that's visible at smoke-test time and
 // not a silent corruption.
 
-import type { Card, GameState, Player, RuleBuilder, Slot } from "../types/envelopes";
-import { renderCard } from "./cards";
+import type { Card, GameState, GoalCard, Player, RuleBuilder, Slot } from "../types/envelopes";
+import { renderCard, renderSeat } from "./cards";
+import { renderActiveRule } from "./rule";
 
 const BURN_TICK = 5;
 const DISCARD_COST = 5;
 
-export function diffStates(prev: GameState, curr: GameState): string[] {
+export function diffStates(prev: GameState, curr: GameState, humanSeat: number | null): string[] {
   const lines: string[] = [];
 
   const prevRound = prev.round_number ?? 0;
   const currRound = curr.round_number ?? 0;
-  if (currRound !== prevRound) {
-    lines.push(`--- Round ${currRound} ---`);
+
+  // Round-transition narration runs BEFORE the per-player diff so the reader
+  // sees `Round N resolved → effect` and `--- Round N+1 starts. New rule … ---`
+  // before any chip / VP / hand churn from the new round.
+  if (prev.phase === "resolve" && curr.phase !== "resolve") {
+    const effect = prev.revealed_effect ?? curr.revealed_effect ?? null;
+    const effectText = effect ? renderCard(effect, humanSeat) : null;
+    const ruleSnapshot = prev.active_rule ? renderActiveRule(prev.active_rule, humanSeat) : null;
+    const ruleTag = ruleSnapshot ? ` [${ruleSnapshot}]` : "";
+    const tail = effectText ? ` → ${effectText}` : "";
+    lines.push(`Round ${prevRound} rule${ruleTag} resolved${tail}`);
   }
+
+  if (currRound !== prevRound) {
+    const newRule = curr.active_rule ? renderActiveRule(curr.active_rule, humanSeat) : null;
+    if (newRule) {
+      lines.push(`--- Round ${currRound} starts. New rule: ${newRule} ---`);
+    } else {
+      lines.push(`--- Round ${currRound} ---`);
+    }
+  }
+
   if (prev.phase !== curr.phase) {
     lines.push(`Phase → ${(curr.phase ?? "lobby").toUpperCase()}`);
   }
   if ((prev.active_seat ?? -1) !== (curr.active_seat ?? -1) && curr.phase === "build") {
-    lines.push(`Turn → Player ${curr.active_seat ?? 0}`);
+    lines.push(`Turn → ${renderSeat(curr.active_seat ?? 0, humanSeat)}`);
   }
 
   // Detect which slot got newly filled this broadcast (best-effort).
@@ -47,10 +67,15 @@ export function diffStates(prev: GameState, curr: GameState): string[] {
   const burnTickSeats: number[] = [];
   const prevPlayers = new Map((prev.players ?? []).map((p) => [p.id, p] as const));
 
+  // Goals removed from the face-up row this broadcast — used below to
+  // attribute VP gains as goal claims.
+  const removedGoals = collectRemovedGoals(prev.active_goals ?? [], curr.active_goals ?? []);
+
   for (const cp of curr.players ?? []) {
     const pp = prevPlayers.get(cp.id);
     if (!pp) continue;
     const seat = cp.seat;
+    const who = renderSeat(seat, humanSeat);
     const handDelta = (cp.hand?.length ?? 0) - (pp.hand?.length ?? 0);
     const chipDelta = (cp.chips ?? 0) - (pp.chips ?? 0);
     const vpDelta = (cp.vp ?? 0) - (pp.vp ?? 0);
@@ -72,66 +97,57 @@ export function diffStates(prev: GameState, curr: GameState): string[] {
       const inferredCost = -handDelta * DISCARD_COST;
       const certain = chipDelta === -inferredCost;
       const tag = certain ? "" : " ?";
-      lines.push(`Player ${seat} discarded ${-handDelta} cards (cost ${-chipDelta} chips)${tag}`);
+      lines.push(`${who} discarded ${-handDelta} cards (cost ${-chipDelta} chips)${tag}`);
       chipsExplained = true;
     } else if (handDelta === -1 && (chipDelta === 0 || chipsExplained)) {
-      const where = filledSlot ? ` into ${filledSlot.name}` : "";
-      const what = filledSlot?.card ? `: ${renderCard(filledSlot.card)}` : "";
-      lines.push(`Player ${seat} played a card${where}${what}`);
+      if (filledSlot && filledSlot.kind === "joker" && filledSlot.card) {
+        lines.push(`${who} attached ${renderCard(filledSlot.card, humanSeat)}`);
+      } else if (filledSlot?.card) {
+        lines.push(
+          `${who} played ${renderCard(filledSlot.card, humanSeat)} into ${filledSlot.name}`,
+        );
+      } else if (filledSlot) {
+        lines.push(`${who} played a card into ${filledSlot.name}`);
+      } else {
+        lines.push(`${who} played a card`);
+      }
     } else if (handDelta < 0 && chipDelta === 0) {
-      lines.push(`Player ${seat} lost ${-handDelta} cards`);
+      lines.push(`${who} lost ${-handDelta} cards`);
     } else if (handDelta > 0) {
-      lines.push(`Player ${seat} drew ${handDelta} card(s)`);
+      lines.push(`${who} drew ${handDelta} card(s)`);
     }
 
-    if (vpDelta > 0) {
-      lines.push(`Player ${seat} +${vpDelta} VP → ${cp.vp}`);
-    } else if (vpDelta < 0) {
-      lines.push(`Player ${seat} ${vpDelta} VP → ${cp.vp}`);
+    if (vpDelta !== 0) {
+      lines.push(vpLine(who, vpDelta, cp, removedGoals, prev, curr, humanSeat));
     }
 
     if (chipDelta !== 0 && !chipsExplained) {
       const sign = chipDelta > 0 ? "+" : "";
-      lines.push(`Player ${seat} ${sign}${chipDelta} chips → ${cp.chips}`);
+      lines.push(`${who} ${sign}${chipDelta} chips → ${cp.chips}`);
     }
 
     const burnDelta = currBurn - prevBurn;
     if (burnDelta > 0) {
-      lines.push(`Player ${seat} BURN +${burnDelta} → ${currBurn}`);
+      lines.push(`${who} BURN +${burnDelta} → ${currBurn}`);
     } else if (burnDelta < 0 && currBurn === 0) {
-      lines.push(`Player ${seat} BURN cleared`);
+      lines.push(`${who} BURN cleared`);
     } else if (burnDelta < 0) {
-      lines.push(`Player ${seat} BURN ${prevBurn} → ${currBurn}`);
+      lines.push(`${who} BURN ${prevBurn} → ${currBurn}`);
     }
 
-    pushStatusDiff(lines, seat, pp, cp);
+    pushStatusDiff(lines, who, pp, cp);
   }
 
   if (burnTickSeats.length > 0) {
-    const tag = burnTickSeats.map((s) => `Player ${s}`).join(", ");
+    const tag = burnTickSeats.map((s) => renderSeat(s, humanSeat)).join(", ");
     lines.push(`BURN tick → ${tag}`);
   }
 
-  // Goal claim: a face-up slot loses its goal (replenished or empty).
-  const prevGoals = prev.active_goals ?? [];
-  const currGoals = curr.active_goals ?? [];
-  for (let i = 0; i < Math.max(prevGoals.length, currGoals.length); i++) {
-    const pg = prevGoals[i] ?? null;
-    const cg = currGoals[i] ?? null;
-    if (pg && (cg === null || cg.id !== pg.id)) {
-      lines.push(`Goal claimed → ${pg.name}`);
-    }
-  }
-
-  // Rule resolved: phase transitions out of RESOLVE.
-  if (prev.phase === "resolve" && curr.phase !== "resolve") {
-    const effect = prev.revealed_effect ?? curr.revealed_effect ?? null;
-    const tail = effect ? ` → ${renderCard(effect)}` : "";
-    lines.push(`Rule resolved${tail}`);
-  }
-
   if (!prev.winner && curr.winner) {
-    lines.push(`--- WINNER: Player ${curr.winner.seat} ---`);
+    const winnerSeat = curr.winner.seat;
+    const winnerName =
+      humanSeat !== null && winnerSeat === humanSeat ? "You" : `Player ${winnerSeat}`;
+    lines.push(`--- WINNER: ${winnerName} ---`);
   }
 
   return lines;
@@ -140,6 +156,7 @@ export function diffStates(prev: GameState, curr: GameState): string[] {
 interface FilledSlot {
   name: string;
   card: Card | null;
+  kind: "slot" | "modifier" | "joker";
 }
 
 function newlyFilledSlot(
@@ -152,23 +169,98 @@ function newlyFilledSlot(
     const ps = prevSlots.get(cs.name);
     if (!ps) continue;
     if (!ps.filled_by && cs.filled_by) {
-      return { name: cs.name, card: cs.filled_by };
+      return { name: cs.name, card: cs.filled_by, kind: "slot" };
     }
     const pMods = ps.modifiers?.length ?? 0;
     const cMods = cs.modifiers?.length ?? 0;
     if (cMods > pMods) {
       const newest = cs.modifiers?.[cMods - 1] ?? null;
-      return { name: `${cs.name}+modifier`, card: newest };
+      return { name: `${cs.name}+modifier`, card: newest, kind: "modifier" };
     }
   }
   // JOKER attach surfaces as ``rule.joker_attached`` rather than a slot.
   if (!prev?.joker_attached && curr.joker_attached) {
-    return { name: "JOKER", card: curr.joker_attached };
+    return { name: "JOKER", card: curr.joker_attached, kind: "joker" };
   }
   return null;
 }
 
-function pushStatusDiff(lines: string[], seat: number, prev: Player, curr: Player): void {
+function collectRemovedGoals(
+  prev: readonly (GoalCard | null)[],
+  curr: readonly (GoalCard | null)[],
+): GoalCard[] {
+  const out: GoalCard[] = [];
+  for (let i = 0; i < Math.max(prev.length, curr.length); i++) {
+    const pg = prev[i] ?? null;
+    const cg = curr[i] ?? null;
+    if (pg && (cg === null || cg.id !== pg.id)) out.push(pg);
+  }
+  return out;
+}
+
+// Heuristic: attribute a VP gain to a removed-this-broadcast goal whose
+// predicate matches the player's current state, OR to a RESOLVE-phase rule
+// effect, falling back to a "?" tag when neither attribution is confident.
+function vpLine(
+  who: string,
+  vpDelta: number,
+  player: Player,
+  removedGoals: readonly GoalCard[],
+  prev: GameState,
+  curr: GameState,
+  humanSeat: number | null,
+): string {
+  const sign = vpDelta > 0 ? "+" : "";
+  const head = `${who} ${sign}${vpDelta} VP → ${player.vp}`;
+  if (vpDelta <= 0) return head;
+
+  const claimable = removedGoals.filter(
+    (g) => g.vp_award === vpDelta && goalPredicateMatches(g, player, curr.round_number ?? 0),
+  );
+  if (claimable.length === 1) {
+    return `${head} (claimed goal: ${claimable[0]?.name})`;
+  }
+  if (claimable.length > 1) {
+    return `${head} (claimed goal: ${claimable.map((g) => g?.name).join(" | ")}) ?`;
+  }
+
+  const inResolve = prev.phase === "resolve" || curr.phase === "resolve";
+  const effect = curr.revealed_effect ?? prev.revealed_effect ?? null;
+  if (inResolve && effect) {
+    return `${head} (rule effect: ${renderCard(effect, humanSeat)})`;
+  }
+
+  return `${head} (?)`;
+}
+
+function goalPredicateMatches(goal: GoalCard, player: Player, roundNumber: number): boolean {
+  const s = player.status ?? {};
+  const h = player.history ?? {};
+  switch (goal.claim_condition) {
+    case "chips_at_least_75":
+      return (player.chips ?? 0) >= 75;
+    case "chips_under_10":
+      return (player.chips ?? 0) < 10;
+    case "burn_at_least_2":
+      return (s.burn ?? 0) >= 2;
+    case "rules_completed_at_least_3":
+      return ((h.rules_completed_this_game as number | undefined) ?? 0) >= 3;
+    case "gifts_at_least_2":
+      return ((h.cards_given_this_game as number | undefined) ?? 0) >= 2;
+    case "free_agent":
+      return (
+        roundNumber >= 5 && (s.burn ?? 0) === 0 && !s.mute && !s.blessed && !s.marked && !s.chained
+      );
+    case "full_hand":
+      return (player.hand?.length ?? 0) >= 7;
+    default:
+      // Unknown predicate — assume the goal could have been the one claimed
+      // rather than falsely ruling it out. Caller still requires vp_award match.
+      return true;
+  }
+}
+
+function pushStatusDiff(lines: string[], who: string, prev: Player, curr: Player): void {
   const ps = prev.status ?? {};
   const cs = curr.status ?? {};
   const flags: { key: "mute" | "blessed" | "marked" | "chained"; label: string }[] = [
@@ -178,7 +270,7 @@ function pushStatusDiff(lines: string[], seat: number, prev: Player, curr: Playe
     { key: "chained", label: "CHAINED" },
   ];
   for (const { key, label } of flags) {
-    if (!ps[key] && cs[key]) lines.push(`Player ${seat} ${label} applied`);
-    else if (ps[key] && !cs[key]) lines.push(`Player ${seat} ${label} cleared`);
+    if (!ps[key] && cs[key]) lines.push(`${who} ${label} applied`);
+    else if (ps[key] && !cs[key]) lines.push(`${who} ${label} cleared`);
   }
 }

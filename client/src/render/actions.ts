@@ -71,7 +71,7 @@ export function renderActions(
       container.appendChild(sectionHeader(`Fill ${slot}:`));
       const row = buttonRow();
       for (const action of actions) {
-        row.appendChild(playButton(action, byId, handlers));
+        row.appendChild(playButton(action, byId, humanSeat, handlers));
       }
       container.appendChild(row);
     }
@@ -81,14 +81,14 @@ export function renderActions(
     container.appendChild(sectionHeader("Attach JOKER:"));
     const row = buttonRow();
     for (const action of jokerActions) {
-      row.appendChild(jokerButton(action, byId, handlers));
+      row.appendChild(jokerButton(action, byId, humanSeat, handlers));
     }
     container.appendChild(row);
   }
 
   if (discardActions.length > 0) {
     container.appendChild(sectionHeader("Discard & redraw:"));
-    renderDiscardSection(container, discardActions, hand, discard, handlers);
+    renderDiscardSection(container, discardActions, hand, humanSeat, discard, handlers);
   }
 }
 
@@ -110,10 +110,11 @@ function groupBySlot(actions: readonly PlayCard[]): Map<string, PlayCard[]> {
 function playButton(
   action: PlayCard,
   byId: Map<string, Card>,
+  humanSeat: number | null,
   handlers: ActionHandlers,
 ): HTMLButtonElement {
   const card = byId.get(action.card_id);
-  const cardText = card ? renderCard(card) : action.card_id;
+  const cardText = card ? renderCard(card, humanSeat) : "card";
   const dice = action.dice ? ` (${action.dice}d6)` : "";
   return makeButton(`${cardText}${dice}`, () => handlers.onPlay(action));
 }
@@ -121,16 +122,18 @@ function playButton(
 function jokerButton(
   action: PlayJoker,
   byId: Map<string, Card>,
+  humanSeat: number | null,
   handlers: ActionHandlers,
 ): HTMLButtonElement {
   const card = byId.get(action.card_id);
-  return makeButton(card ? renderCard(card) : action.card_id, () => handlers.onPlay(action));
+  return makeButton(card ? renderCard(card, humanSeat) : "JOKER", () => handlers.onPlay(action));
 }
 
 function renderDiscardSection(
   container: HTMLElement,
   legal: readonly DiscardRedraw[],
   hand: readonly Card[],
+  humanSeat: number | null,
   discard: DiscardController,
   handlers: ActionHandlers,
 ): void {
@@ -151,7 +154,8 @@ function renderDiscardSection(
     chip.type = "button";
     chip.classList.add("discard-chip");
     if (discard.selection.has(card.id)) chip.classList.add("selected");
-    chip.textContent = `${card.id} ${renderCard(card)}`;
+    chip.dataset.cardId = card.id;
+    chip.textContent = `${renderCard(card, humanSeat)} [${card.type}]`;
     chip.addEventListener("click", () => discard.onToggle(card.id));
     chips.appendChild(chip);
   }

@@ -36,14 +36,14 @@ export function renderRulePanel(state: GameState, humanSeat: number | null): Rul
   if (!rule) return [{ text: "(no active rule)" }];
 
   const lines: RuleLine[] = [];
-  lines.push({ text: renderHeadline(rule) });
+  lines.push({ text: renderHeadline(rule, humanSeat) });
 
   if (state.revealed_effect) {
-    lines.push({ text: `  Effect: ${renderCard(state.revealed_effect)}` });
+    lines.push({ text: `  Effect: ${renderCard(state.revealed_effect, humanSeat)}` });
   }
 
   if (rule.joker_attached) {
-    lines.push({ text: `  JOKER attached: ${renderCard(rule.joker_attached)}` });
+    lines.push({ text: `  JOKER attached: ${renderCard(rule.joker_attached, humanSeat)}` });
   }
 
   const hand = handFor(state, humanSeat);
@@ -54,7 +54,7 @@ export function renderRulePanel(state: GameState, humanSeat: number | null): Rul
       if (fillers.length === 0) {
         lines.push({ text: `  ${slot.name} ← (no playable card in hand)` });
       } else {
-        const names = fillers.map((c) => `${c.id}:${renderCard(c)}`).join(", ");
+        const names = fillers.map((c) => renderCard(c, humanSeat)).join(", ");
         lines.push({ text: `  ${slot.name} ← ${names}` });
       }
     }
@@ -63,29 +63,33 @@ export function renderRulePanel(state: GameState, humanSeat: number | null): Rul
   return lines;
 }
 
-function renderHeadline(rule: RuleBuilder): string {
-  const slotsText = renderSlots(rule);
+export function renderActiveRule(rule: RuleBuilder, humanSeat: number | null): string {
+  return renderHeadline(rule, humanSeat);
+}
+
+function renderHeadline(rule: RuleBuilder, humanSeat: number | null): string {
+  const slotsText = renderSlots(rule, humanSeat);
   const effectText = renderEffectSlot();
-  const joker = rule.joker_attached ? ` + ${renderCard(rule.joker_attached)}` : "";
+  const joker = rule.joker_attached ? ` + ${renderCard(rule.joker_attached, humanSeat)}` : "";
   return `${rule.template} ${slotsText} THEN ${effectText}${joker}`;
 }
 
-function renderSlots(rule: RuleBuilder): string {
+function renderSlots(rule: RuleBuilder, humanSeat: number | null): string {
   const slots = rule.slots ?? [];
   const parts: string[] = [];
   for (const slot of slots) {
     const connector = CONNECTORS[slot.name];
     if (connector) parts.push(connector);
-    parts.push(renderSlot(slot));
+    parts.push(renderSlot(slot, humanSeat));
   }
   return parts.join(" ");
 }
 
-function renderSlot(slot: Slot): string {
+function renderSlot(slot: Slot, humanSeat: number | null): string {
   const filled = slot.filled_by ?? null;
-  const body = filled ? renderCard(filled) : "?";
+  const body = filled ? renderCard(filled, humanSeat) : "?";
   const mods = (slot.modifiers ?? []) as Card[];
-  const modText = mods.length > 0 ? ` ${mods.map((m) => renderCard(m)).join(" ")}` : "";
+  const modText = mods.length > 0 ? ` ${mods.map((m) => renderCard(m, humanSeat)).join(" ")}` : "";
   return `[${slot.name}: ${body}${modText}]`;
 }
 

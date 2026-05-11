@@ -48,7 +48,7 @@ export function renderYou(state: GameState, humanSeat: number): YouLine[] {
     lines.push({ text: "  (empty hand)" });
   } else {
     for (const card of hand) {
-      lines.push({ text: `  ${card.id} [${card.type}] ${renderCard(card)}`, card });
+      lines.push({ text: `  [${card.type}] ${renderCard(card, humanSeat)}`, card });
     }
   }
   return lines;

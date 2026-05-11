@@ -103,7 +103,7 @@ function ingestBroadcast(broadcast: StateBroadcast): void {
   const state = broadcast.state;
   const prior = app.lastState;
   if (prior) {
-    const lines = diffStates(prior, state);
+    const lines = diffStates(prior, state, app.humanSeat);
     if (lines.length > 0) appendTranscript(lines);
   } else {
     appendTranscript([
@@ -193,7 +193,7 @@ function describeOwnAction(action: WireAction, state: GameState): string {
   const byId = new Map(hand.map((c) => [c.id, c] as const));
   if ("slot" in action) {
     const card = byId.get(action.card_id);
-    const cardText = card ? renderCard(card) : action.card_id;
+    const cardText = card ? renderCard(card, app.humanSeat) : "card";
     const dice = action.dice ? ` (${action.dice}d6)` : "";
     return `→ You played ${cardText} into ${action.slot}${dice}`;
   }
@@ -202,7 +202,7 @@ function describeOwnAction(action: WireAction, state: GameState): string {
     return `→ You discarded ${action.card_ids.length} card(s) (cost ${cost} chips)`;
   }
   const joker = byId.get(action.card_id);
-  return `→ You attached ${joker ? renderCard(joker) : action.card_id}`;
+  return `→ You attached ${joker ? renderCard(joker, app.humanSeat) : "JOKER"}`;
 }
 
 function handFor(state: GameState, humanSeat: number | null): readonly Card[] {
