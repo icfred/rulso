@@ -172,6 +172,16 @@ def resolve_if_rule(
         return state
     mode = structured.subject.scope_mode
     if mode == "iterative":
+        # RUL-60: MARKED narrows the EACH_PLAYER candidate set per
+        # design/status-tokens.md. When ≥1 player holds MARKED, intersect
+        # ``scoped`` with the MARKED set (preserving any BUT subtractions from
+        # the SUBJECT-modifier fold above). When 0 MARKED holders, ``scoped``
+        # is unchanged — the rule fires on the full iterative candidate set.
+        # ANYONE (existential) and singular SUBJECTs are unaffected; MARKED is
+        # an EACH_PLAYER-only diversion per status-tokens.md.
+        marked_holders = frozenset(p.id for p in state.players if p.status.marked)
+        if marked_holders:
+            scoped = scoped & marked_holders
         # ADR-0003: one discrete fire per matching player, seat order from
         # ``state.active_seat``. Each fire is its own cascade event.
         result = state
