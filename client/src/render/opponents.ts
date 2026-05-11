@@ -1,24 +1,17 @@
 // Render every non-human seat's public state as one line.
 //
-// Floating labels are recomputed client-side (the engine never serialises
-// them — see `engine/src/rulso/labels.py`). M1.5 + M2 coverage:
-//   - THE LEADER  (max vp; ties → all tied)
-//   - THE WOUNDED (min chips; ties → all tied)
-//   - THE GENEROUS (max history.cards_given_this_game; empty if all zero)
-//   - THE CURSED   (max status.burn; empty if all zero)
-//   - THE MARKED   (Player.status.marked)
-//   - THE CHAINED  (Player.status.chained)
-// Tie-break policy follows ADR-0001: all tied players hold the label.
+// Floating-label assignments (LEADER / WOUNDED / GENEROUS / CURSED) come
+// from `state.labels` on the wire — the engine publishes the canonical
+// ADR-0001 computation (RUL-70). MARKED / CHAINED are status tokens and
+// stay derived from `player.status` until the M2 status-apply ticket lands
+// them on `state.labels`.
 
 import type { GameState, Player } from "../types/envelopes";
 
-type Labels = Record<string, string>;
-
 export function renderOpponents(state: GameState, humanSeat: number): string[] {
-  const labels = computeLabels(state);
   return (state.players ?? [])
     .filter((p) => p.seat !== humanSeat)
-    .map((p) => renderOne(p, labels[p.id] ?? ""));
+    .map((p) => renderOne(p, labelSuffix(state, p)));
 }
 
 function renderOne(player: Player, labelSuffix: string): string {
@@ -40,28 +33,14 @@ function renderStatus(player: Player): string {
   return parts.join(", ");
 }
 
-function computeLabels(state: GameState): Labels {
-  const players = state.players ?? [];
-  if (players.length === 0) return {};
-  const out: Labels = {};
-  const addLabel = (id: string, name: string): void => {
-    out[id] = out[id] ? `${out[id]}, ${name}` : name;
-  };
-
-  const maxVp = Math.max(...players.map((p) => p.vp ?? 0));
-  const minChips = Math.min(...players.map((p) => p.chips ?? 0));
-  const maxGiven = Math.max(...players.map((p) => p.history?.cards_given_this_game ?? 0));
-  const maxBurn = Math.max(...players.map((p) => p.status?.burn ?? 0));
-
-  for (const p of players) {
-    if ((p.vp ?? 0) === maxVp) addLabel(p.id, "THE LEADER");
-    if ((p.chips ?? 0) === minChips) addLabel(p.id, "THE WOUNDED");
-    if (maxGiven > 0 && (p.history?.cards_given_this_game ?? 0) === maxGiven) {
-      addLabel(p.id, "THE GENEROUS");
-    }
-    if (maxBurn > 0 && (p.status?.burn ?? 0) === maxBurn) addLabel(p.id, "THE CURSED");
-    if (p.status?.marked) addLabel(p.id, "THE MARKED");
-    if (p.status?.chained) addLabel(p.id, "THE CHAINED");
+function labelSuffix(state: GameState, player: Player): string {
+  const parts: string[] = [];
+  for (const [name, holders] of Object.entries(state.labels ?? {})) {
+    if (holders.includes(player.id)) parts.push(name);
   }
-  return out;
+  // Status-token labels stay client-derived until the M2 status-apply ticket
+  // wires them onto `state.labels`.
+  if (player.status?.marked) parts.push("THE MARKED");
+  if (player.status?.chained) parts.push("THE CHAINED");
+  return parts.join(", ");
 }

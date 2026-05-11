@@ -1,8 +1,15 @@
 """Floating-label computation per ``design/state.md``.
 
-Labels are computed each round, never stored on ``GameState``. ``recompute_labels``
-is a pure function over ``GameState`` returning a label-name → frozenset[player_id]
-mapping.
+``recompute_labels`` is a pure function over ``GameState`` returning a
+label-name → frozenset[player_id] mapping. Engine-internal consumers
+(``effects`` / ``persistence``) use the frozenset shape for set membership.
+
+RUL-70: labels are also published on the wire via ``GameState.labels``
+(single-source ADR-0001 computation; clients read from ``state.labels``
+rather than recomputing). ``to_wire`` converts the internal mapping into the
+on-state ``dict[str, tuple[str, ...]]`` shape with ids sorted ascending so
+the JSON is byte-deterministic. ``rules`` owns the refresh discipline; this
+module stays pure-function.
 
 M1.5 (RUL-19): LEADER and WOUNDED are live.
 M2 (RUL-33): GENEROUS and CURSED are live. MARKED and CHAINED stay empty
@@ -15,6 +22,8 @@ a burn).
 """
 
 from __future__ import annotations
+
+from collections.abc import Mapping
 
 from rulso.state import GameState
 
@@ -76,3 +85,13 @@ def recompute_labels(state: GameState) -> dict[str, frozenset[str]]:
         MARKED: frozenset(),
         CHAINED: frozenset(),
     }
+
+
+def to_wire(labels_map: Mapping[str, frozenset[str]]) -> dict[str, tuple[str, ...]]:
+    """Convert :func:`recompute_labels` output to the ``GameState.labels`` shape.
+
+    Sorts holder ids ascending so the JSON serialisation of
+    ``GameState.labels`` is deterministic across runs (frozenset iteration
+    order is not stable).
+    """
+    return {name: tuple(sorted(holders)) for name, holders in labels_map.items()}

@@ -100,6 +100,9 @@ export interface GameState {
   winner?: Player | null;
   build_turns_taken?: number;
   revealed_effect?: Card | null;
+  labels?: {
+    [k: string]: string[];
+  };
 }
 export interface Player {
   id: string;

@@ -78,6 +78,16 @@ _JOKER_VARIANTS: frozenset[str] = frozenset(
     {_JOKER_PERSIST_WHEN, _JOKER_PERSIST_WHILE, _JOKER_DOUBLE, _JOKER_ECHO}
 )
 
+
+# RUL-70: label-refresh discipline. Every public entry point that may touch a
+# label-driving attribute (vp / chips / burn / cards_given) recomputes
+# ``state.labels`` on its way out so clients can read the wire field directly
+# instead of mirroring the engine's computation (ADR-0001).
+def _with_recomputed_labels(state: GameState) -> GameState:
+    """Return ``state`` with ``state.labels`` refreshed from the canonical compute."""
+    return state.model_copy(update={"labels": labels.to_wire(labels.recompute_labels(state))})
+
+
 # --- Public entry points ----------------------------------------------------
 
 
@@ -132,17 +142,19 @@ def start_game(seed: int = 0) -> GameState:
     initial_shop_pool: tuple[ShopOffer, ...] = tuple(shop_pool_list)
     # --- end RUL-51 block ---
 
-    return GameState(
-        phase=Phase.ROUND_START,
-        round_number=0,
-        dealer_seat=0,
-        active_seat=0,
-        players=tuple(players),
-        deck=remaining_deck,
-        effect_deck=effect_deck,
-        goal_deck=initial_goal_deck,
-        active_goals=initial_active_goals,
-        shop_pool=initial_shop_pool,
+    return _with_recomputed_labels(
+        GameState(
+            phase=Phase.ROUND_START,
+            round_number=0,
+            dealer_seat=0,
+            active_seat=0,
+            players=tuple(players),
+            deck=remaining_deck,
+            effect_deck=effect_deck,
+            goal_deck=initial_goal_deck,
+            active_goals=initial_active_goals,
+            shop_pool=initial_shop_pool,
+        )
     )
 
 
@@ -196,10 +208,10 @@ def enter_round_start(state: GameState, *, rng: random.Random | None = None) -> 
     new_round = state.round_number + 1
     # Step 2: status tick — BURN drains chips, MUTE clears (RUL-40, RUL-30).
     players = tuple(status.tick_round_start(p) for p in state.players)
-    # Step 3: recompute floating labels (ADR-0001 — computed-not-stored).
-    # The recompute is preserved as the canonical design step 3 hook; the
-    # resolver receives labels as a transient parameter from enter_resolve.
-    labels.recompute_labels(state.model_copy(update={"players": players}))
+    # Step 3 (ADR-0001 / RUL-70): floating-label recompute is published on
+    # ``state.labels`` by ``_with_recomputed_labels`` at every public-entry
+    # return; resolver still receives labels as a transient parameter from
+    # ``enter_resolve`` for in-flight effect application.
     # Step 4: WHILE-rule tick — no-op when no persistent rules (M1.5 path).
     if state.persistent_rules:
         tick_state = state.model_copy(update={"players": players, "round_number": new_round})
@@ -218,16 +230,18 @@ def enter_round_start(state: GameState, *, rng: random.Random | None = None) -> 
             post_step_4.shop_pool, post_step_4.shop_discard, rng
         )
         if offers:
-            return post_step_4.model_copy(
-                update={
-                    "phase": Phase.SHOP,
-                    "shop_offer": offers,
-                    "shop_pool": new_pool,
-                    "shop_discard": new_discard,
-                }
+            return _with_recomputed_labels(
+                post_step_4.model_copy(
+                    update={
+                        "phase": Phase.SHOP,
+                        "shop_offer": offers,
+                        "shop_pool": new_pool,
+                        "shop_discard": new_discard,
+                    }
+                )
             )
     # No SHOP this round — proceed directly to steps 6-8.
-    return _round_start_post_shop(post_step_4, rng=rng)
+    return _with_recomputed_labels(_round_start_post_shop(post_step_4, rng=rng))
 
 
 def complete_shop(state: GameState, *, rng: random.Random | None = None) -> GameState:
@@ -291,7 +305,9 @@ def apply_shop_purchase(state: GameState, player_id: str, offer_index: int) -> G
     )
     new_players = state.players[:player_idx] + (new_player,) + state.players[player_idx + 1 :]
     new_offer = state.shop_offer[:offer_index] + state.shop_offer[offer_index + 1 :]
-    return state.model_copy(update={"players": new_players, "shop_offer": new_offer})
+    return _with_recomputed_labels(
+        state.model_copy(update={"players": new_players, "shop_offer": new_offer})
+    )
 
 
 def shop_purchase_order(state: GameState) -> tuple[str, ...]:
@@ -442,12 +458,14 @@ def enter_resolve(state: GameState, *, rng: random.Random | None = None) -> Game
     # Step 9: win check.
     winner = _check_winner(state.players)
     if winner is not None:
-        return state.model_copy(
-            update={
-                "phase": Phase.END,
-                "winner": winner,
-                "active_rule": None,
-            }
+        return _with_recomputed_labels(
+            state.model_copy(
+                update={
+                    "phase": Phase.END,
+                    "winner": winner,
+                    "active_rule": None,
+                }
+            )
         )
     # Step 10: cleanup — discard played fragments and expire MARKED tokens
     # (one-round lifetime per RUL-30 / design/state.md). Persisted rules keep
@@ -483,14 +501,16 @@ def enter_resolve(state: GameState, *, rng: random.Random | None = None) -> Game
     )
     refilled = _refill_hands(state_post_discard, refill_rng)
     # Step 13: transition to ROUND_START.
-    return refilled.model_copy(
-        update={
-            "phase": Phase.ROUND_START,
-            "active_rule": None,
-            "dealer_seat": new_dealer,
-            "build_turns_taken": 0,
-            "revealed_effect": None,
-        }
+    return _with_recomputed_labels(
+        refilled.model_copy(
+            update={
+                "phase": Phase.ROUND_START,
+                "active_rule": None,
+                "dealer_seat": new_dealer,
+                "build_turns_taken": 0,
+                "revealed_effect": None,
+            }
+        )
     )
 
 
@@ -569,7 +589,7 @@ def pass_turn(state: GameState) -> GameState:
     """Active player passes (forced pass / no legal play). Advances the turn."""
     if state.phase is not Phase.BUILD:
         raise ValueError(f"pass_turn requires phase=BUILD, got {state.phase}")
-    return _build_tick(state)
+    return _with_recomputed_labels(_build_tick(state))
 
 
 def discard_redraw(
@@ -635,13 +655,15 @@ def discard_redraw(
     new_players = (
         state.players[: state.active_seat] + (new_player,) + state.players[state.active_seat + 1 :]
     )
-    return _build_tick(
-        state.model_copy(
-            update={
-                "players": new_players,
-                "deck": new_deck,
-                "discard": new_discard,
-            }
+    return _with_recomputed_labels(
+        _build_tick(
+            state.model_copy(
+                update={
+                    "players": new_players,
+                    "deck": new_deck,
+                    "discard": new_discard,
+                }
+            )
         )
     )
 

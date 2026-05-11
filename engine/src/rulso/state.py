@@ -244,3 +244,14 @@ class GameState(BaseModel):
     # Added by RUL-8 (round flow phase machine). Additive only — see docs/engine/round-flow.md.
     build_turns_taken: int = 0
     revealed_effect: Card | None = None
+    # RUL-70: floating-label assignments published on the wire. Canonical
+    # computation lives in ``labels.recompute_labels`` (ADR-0001); ``rules`` is
+    # responsible for refreshing this field at every public mutation that can
+    # touch a label-driving attribute (vp / chips / burn / cards_given). Clients
+    # read this directly instead of recomputing — single source of truth for
+    # ADR-0001 tie-break semantics. Tuple values are sorted ascending by
+    # player id so the JSON is deterministic. A ``dict`` (not
+    # ``tuple[tuple[str, tuple[str, ...]], ...]``) so generated TS lands as
+    # ``{ [k: string]: string[] }``; consequence: ``GameState`` is no longer
+    # hashable, which no current consumer relied on.
+    labels: dict[str, tuple[str, ...]] = Field(default_factory=dict)
