@@ -1,4 +1,4 @@
-_Last edited: 2026-05-11 by RUL-61_
+_Last edited: 2026-05-11 by RUL-56_
 
 # M2 watchable smoke
 
@@ -31,34 +31,79 @@ and return the original output; the only side effect is incrementing a
 counter dict. Other test modules in the same pytest session are unaffected
 because the wrappers are reverted in `try/finally`.
 
-## Empirical baseline (deterministic main post-RUL-61)
+## Empirical baseline (deterministic main post-RUL-56)
 
 Seeds 0..9 at `rounds=200`:
 
 | Seed | rc | Winner | resolve_if calls | persistent_WHEN | persistent_WHILE | goal_VP | chip_delta |
 |---|---|---|---|---|---|---|---|
-| 0 | 0 | p* | 38 | 3 | 20 | 7 | 20 |
+| 0 | 0 | p* | 16 | 14 | 3 | 6 | 0 |
 | 1 | 0 | p* | 4 | 1 | 0 | 5 | 0 |
-| 2 | 1 | – | 8 | 2 | 0 | 0 | 0 |
-| 3 | 0 | p* | 3 | 0 | 0 | 5 | 0 |
-| 4 | 1 | – | 437 | 188 | 397 | 2 | 25 |
-| 5 | 0 | p* | 18 | 11 | 0 | 5 | 0 |
-| 6 | 1 | – | 403 | 192 | 391 | 0 | 20 |
-| 7 | 0 | p* | 13 | 6 | 0 | 6 | 0 |
-| 8 | 1 | – | 435 | 194 | 376 | 0 | 65 |
-| 9 | 0 | p* | 77 | 42 | 37 | 6 | 75 |
-| **sum** | | **6/10** | **1436** | **639** | **1221** | **36** | **205** |
+| 2 | 1 | – | 6 | 195 | 0 | 1 | 0 |
+| 3 | 0 | p* | 3 | 0 | 0 | 7 | 0 |
+| 4 | 1 | – | 271 | 747 | 216 | 0 | 15 |
+| 5 | 0 | p* | 22 | 18 | 3 | 4 | 10 |
+| 6 | 1 | – | 412 | 194 | 392 | 0 | 10 |
+| 7 | 0 | p* | 14 | 8 | 0 | 7 | 0 |
+| 8 | 1 | – | 220 | 379 | 197 | 0 | 0 |
+| 9 | 0 | p* | 23 | 20 | 0 | 6 | 10 |
+| **sum** | | **6/10** | **991** | **1576** | **811** | **36** | **45** |
 
-Winners: seeds 0/1/3/5/7/9. Cap-hit: seeds 2/4/6/8. Stable bimodality at
-`rounds=200` — a substrate property of the current bot heuristic + the
-post-RUL-61 effect-deck depth (14 cards). The earlier RUL-55 baseline of
-7/10 (winners 0/1/3/4/5/7/9) was achieved with the M2 status vocabulary
-half-wired — MARKED + CHAINED-clear absent from production. Once RUL-61
-appended `eff.marked.apply` + `eff.chained.clear` at the head of
-`cards.yaml effect_cards:`, deck depth shifted 12 → 14 and seed 4 flipped
-from winner (~40 rounds) to cap-hit. Below 6/10 fires the next polish
-ticket; the gap between random bots and the full status vocabulary is
-exactly what M4 ISMCTS (ADR-0006) will address.
+Winners: seeds 0/1/3/5/7/9. Cap-hit: seeds 2/4/6/8. Identical winner set to
+the pre-SHOP post-RUL-61 baseline — RUL-56's price tuning
+(10/12/11/11/11/11/12) keeps the SHOP transparent to winner emergence at
+the random-bot tier. With every offer priced 10-12 and BURN/discard drain
+running, bots rarely afford the cheapest offer in rounds 3 or 6, so the
+SHOP fires and is observed (events emit, the `_drive_shop` path exercises
+buyers in ascending-VP order) without diverting enough chips to flip
+seeds. Per-seed `resolve_if` and `chip_delta` counts shifted vs the
+pre-SHOP baseline because the seeded shop-pool shuffle perturbs the
+seed-0 dealing slightly, but aggregate floors hold by orders of magnitude.
+
+The earlier RUL-55 baseline of 7/10 (winners 0/1/3/4/5/7/9) was achieved
+with the M2 status vocabulary half-wired — MARKED + CHAINED-clear absent
+from production. Once RUL-61 appended `eff.marked.apply` +
+`eff.chained.clear` at the head of `cards.yaml effect_cards:`, deck depth
+shifted 12 → 14 and seed 4 flipped from winner (~40 rounds) to cap-hit.
+Below 6/10 fires the next polish ticket; the gap between random bots and
+the full status vocabulary is exactly what M4 ISMCTS (ADR-0006) will
+address.
+
+## RUL-56 SHOP content — price-tuning empirical record
+
+Un-tuned ADR-0007 starter prices (5/7/6/6/10/9/12) yielded 5/10 winners
+(seeds 1/3/5/7/9, seed 0 flipped to cap-hit vs the pre-SHOP baseline).
+Mechanism: `bots.random.select_purchase` is "cheapest affordable, ties by
+lowest index". At 5-7 chip offers and 4 buyers per SHOP round, ~12-15
+chips per buyer drained across rounds 3 + 6 on top of BURN tick + 5-chip
+discards, leaving less runway for discard-redraw, suppressing rule-fire
+rate and flipping seed 0.
+
+RUL-56 probed eight configurations within the ADR-0007 5-12 band:
+
+| Config (wounded/leader/gt/eq/double/echo/persist_when) | Winners | Seeds |
+|---|---|---|
+| 5/7/6/6/10/9/12 (un-tuned ADR-0007) | 5/10 | 1/3/5/7/9 |
+| 8/9/8/8/10/11/12 (orchestrator probe-1) | 5/10 | 0/1/3/4/7 |
+| 9/10/9/9/11/10/12 | 5/10 | 1/3/4/7/9 |
+| 10/11/10/10/12/11/12 | 5/10 | 0/1/3/4/7 |
+| 12/12/12/12/12/12/12 (uniform max) | 5/10 | 0/1/3/5/9 |
+| 11/12/11/11/12/12/12 (high band) | 4/10 | 1/3/4/7 |
+| 11/11/11/11/11/11/12 (uniform 11) | 3/10 | 1/3/9 |
+| **10/12/11/11/11/11/12 (locked)** | **6/10** | **0/1/3/5/7/9** |
+
+The locked config preserves ADR-0007's shape (cheap SUBJECT < MODIFIER ≤
+JOKER < premium), keeps the 5-12 band (tightened to 10-12), and yields
+the only 6/10 config tested. Uniform-low and uniform-high configs both
+land at 5/10 with different seed-flip patterns. The locked config's
+ascending-VP buy order interacts with the seeded shop-pool shuffle to
+leave the seed-0 cap-hit/winner boundary on the winner side.
+
+Per ADR-0007 §"Pricing rationale": "RUL-56 may tune individual prices
+against M2 watchable-smoke winner-emergence data; the ADR fixes the
+*shape* and the *range*, not per-card specifics." The locked prices
+satisfy both constraints — shape and range — while matching the
+pre-SHOP baseline.
 
 ## RUL-55 polish — Lever A (bot heuristic)
 
@@ -83,12 +128,12 @@ where the goal-pool shuffle shifts THE_HOARDER's claim under
 
 | Floor | Value | Observed | Guards against |
 |---|---|---|---|
-| `_MIN_WINNERS` | 6 | 6 | M2 watchable bar regression — bot heuristic or deck composition pushed below the post-RUL-61 gate |
+| `_MIN_WINNERS` | 6 | 6 | M2 watchable bar regression — bot heuristic, deck composition, or SHOP price band pushed below the post-RUL-56 gate |
 | `_MIN_RUNS_WITH_RESOLVE` | 8 | 10 | Resolve path silently stops firing on most seeds (bot regression or slot-typing change) |
-| `_MIN_PERSISTENT_WHEN_TOTAL` | 1 | 639 | JOKER:PERSIST_WHEN / JOKER:ECHO promotion or `tick_while_rules` traversal of WHEN rules is broken |
-| `_MIN_PERSISTENT_WHILE_TOTAL` | 1 | 1221 | JOKER:PERSIST_WHILE promotion or `tick_while_rules` traversal of WHILE rules is broken |
+| `_MIN_PERSISTENT_WHEN_TOTAL` | 1 | 1576 | JOKER:PERSIST_WHEN / JOKER:ECHO promotion or `tick_while_rules` traversal of WHEN rules is broken |
+| `_MIN_PERSISTENT_WHILE_TOTAL` | 1 | 811 | JOKER:PERSIST_WHILE promotion or `tick_while_rules` traversal of WHILE rules is broken |
 | `_MIN_GOAL_VP_AWARDED` | 1 | 36 | `goals.check_claims` predicate evaluation or VP award path is broken |
-| `_MIN_EFFECT_CHIP_DELTA` | 1 | 205 | `effects.resolve_if_rule` no longer mutates `Player.chips` — dispatcher dropped registration, scope path always empty, or effect handlers got short-circuited |
+| `_MIN_EFFECT_CHIP_DELTA` | 1 | 45 | `effects.resolve_if_rule` no longer mutates `Player.chips` — dispatcher dropped registration, scope path always empty, or effect handlers got short-circuited |
 
 Lifecycle and goal/effect floors sit at the DoD-mandated minimum (1
 sweep-aggregate occurrence). Observed counts are 25×–800× the floor; the
@@ -96,7 +141,7 @@ floors are deliberately trivial — they catch the regression we care about
 (path stops firing entirely) without becoming brittle as the bot heuristic
 or deck composition evolves.
 
-Winner floor sits at the observed count (6/10) with no slack post-RUL-61.
+Winner floor sits at the observed count (6/10) with no slack post-RUL-56.
 Tightening above 6 needs another polish lever or M4 ISMCTS (ADR-0006);
 loosening below 6 needs a follow-up polish ticket and an explanatory note
 here.

@@ -122,8 +122,12 @@ def test_dealer_rotates_one_full_revolution_over_four_failed_rounds() -> None:
     Empty-hand fixture forces every round_start to take the dealer-no-seed
     path. That path consumes the round and rotates immediately without
     entering BUILD — still one full dealer revolution.
+
+    RUL-56: ``shop_pool`` overridden to empty so the SHOP cadence (round 3)
+    skips and the dealer-no-seed rotation is the only path exercised.
     """
     state = start_game()
+    state = state.model_copy(update={"shop_pool": ()})
     for seat in range(PLAYER_COUNT):
         state = _override_hand(state, seat, ())
     dealers: list[int] = []
@@ -147,8 +151,13 @@ def test_dealer_rotates_one_full_revolution_over_four_failed_rounds() -> None:
 
 
 def test_round_start_to_build_sets_active_seat_left_of_dealer() -> None:
-    """``active_seat`` after every successful ROUND_START is ``(dealer + 1) % PLAYER_COUNT``."""
+    """``active_seat`` after every successful ROUND_START is ``(dealer + 1) % PLAYER_COUNT``.
+
+    RUL-56: ``shop_pool`` overridden to empty so the SHOP cadence (round 3)
+    does not intercept ROUND_START → BUILD on the third dealer rotation.
+    """
     state = start_game()
+    state = state.model_copy(update={"shop_pool": ()})
     # Inject hands that always succeed: dealer holds a SUBJECT, the others
     # forced-pass. The fail-and-rotate path then exercises every dealer seat.
     for expected_dealer in range(PLAYER_COUNT):

@@ -299,15 +299,101 @@ def test_shop_recycles_discard_when_pool_drained() -> None:
 # --- start_game integration ---------------------------------------------
 
 
-def test_start_game_initialises_empty_shop_pool() -> None:
-    """M2 ships with no ``shop_cards`` — ``shop_pool`` starts empty."""
+def test_start_game_loads_starter_shop_pool() -> None:
+    """RUL-56: ``start_game`` loads the 7-offer M2.5 starter pool from cards.yaml.
+
+    Pool composition per ADR-0007: 2 SUBJECT, 2 MODIFIER, 3 JOKER. Every name
+    matches an identifier the engine already consumes (`labels.LABEL_NAMES`,
+    `rules._OP_ONLY_COMPARATOR_NAMES`, `rules._JOKER_VARIANTS`). Prices fall
+    within the 5-12 band locked by ADR-0007 §"Pricing rationale".
+    """
     state = start_game(seed=0)
-    assert state.shop_pool == ()
+    assert len(state.shop_pool) == 7
     assert state.shop_offer == ()
     assert state.shop_discard == ()
+
+    payload_counts: dict[CardType, int] = {}
+    for offer in state.shop_pool:
+        payload_counts[offer.card.type] = payload_counts.get(offer.card.type, 0) + 1
+    assert payload_counts == {
+        CardType.SUBJECT: 2,
+        CardType.MODIFIER: 2,
+        CardType.JOKER: 3,
+    }
+
+    for offer in state.shop_pool:
+        assert 5 <= offer.price <= 12, f"{offer.card.id}: price {offer.price} outside 5-12"
+
+    ids = {offer.card.id for offer in state.shop_pool}
+    assert ids == {
+        "shop.subj.wounded",
+        "shop.subj.leader",
+        "shop.mod.gt",
+        "shop.mod.eq",
+        "shop.jkr.double",
+        "shop.jkr.echo",
+        "shop.jkr.persist_when",
+    }
 
 
 def test_condition_templates_load_ok_unaffected_by_shop_schema_addition() -> None:
     """``shop_cards`` schema addition is additive; existing loaders stay green."""
     templates = load_condition_templates()
     assert len(templates) >= 1
+
+
+# --- CLI end-to-end ------------------------------------------------------
+
+
+def test_cli_emits_shop_events_on_cadence_round() -> None:
+    """RUL-56: seeded ``cli.main`` fires ``shop_open`` / ``shop_purchase`` / ``shop_close``.
+
+    With the M2.5 ``shop_cards`` block populated, the SHOP cadence at round
+    3 produces a non-empty ``shop_offer`` and ``_drive_shop`` emits the
+    full lifecycle. Asserts:
+
+    * exactly one ``shop_open`` and one ``shop_close`` per SHOP entry
+    * at least one ``shop_purchase`` or ``shop_skip`` per buyer in the order
+    * every ``shop_purchase`` references an id from the M2.5 starter set
+    * prices in the emitted purchases fall within the 5-12 band
+
+    Seed 1 is chosen because it reliably terminates within a few rounds and
+    its first SHOP draw lands four affordable offers (every buyer purchases
+    rather than skips), exercising the full purchase path.
+    """
+    import contextlib
+    import io as _io
+
+    buf = _io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        from rulso.cli import main as _cli_main
+
+        _cli_main(["--seed", "1", "--rounds", "5"])
+    text = buf.getvalue()
+
+    open_lines = [ln for ln in text.splitlines() if "event=shop_open" in ln]
+    close_lines = [ln for ln in text.splitlines() if "event=shop_close" in ln]
+    purchase_lines = [ln for ln in text.splitlines() if "event=shop_purchase" in ln]
+    skip_lines = [ln for ln in text.splitlines() if "event=shop_skip" in ln]
+
+    assert len(open_lines) >= 1, f"no shop_open in stdout:\n{text}"
+    assert len(close_lines) == len(open_lines)
+    # Every SHOP round visits PLAYER_COUNT buyers.
+    assert len(purchase_lines) + len(skip_lines) >= len(open_lines) * PLAYER_COUNT
+
+    starter_ids = {
+        "shop.subj.wounded",
+        "shop.subj.leader",
+        "shop.mod.gt",
+        "shop.mod.eq",
+        "shop.jkr.double",
+        "shop.jkr.echo",
+        "shop.jkr.persist_when",
+    }
+    for ln in purchase_lines:
+        offer_token = next(t for t in ln.split() if t.startswith("offer="))
+        price_token = next(t for t in ln.split() if t.startswith("price="))
+        offer_id = offer_token.split("=", 1)[1]
+        price = int(price_token.split("=", 1)[1])
+        assert offer_id in starter_ids, f"unknown SHOP offer id: {offer_id}"
+        assert 5 <= price <= 12, f"{offer_id}: price {price} outside 5-12"

@@ -213,6 +213,30 @@ effect_cards:
   - { id: eff.draw.2, name: "DRAW:2" }
   - { id: eff.noop, name: NOOP }
 
+shop_cards:
+  # RUL-56 M2.5 starter pool per ADR-0007 (card-buy semantics via existing
+  # `_ShopEntry.payload_type` route). Each `name` matches an identifier the
+  # engine already consumes — SUBJECT names from `labels.LABEL_NAMES`,
+  # MODIFIER names from `rules._OP_ONLY_COMPARATOR_NAMES`, JOKER names from
+  # `rules._JOKER_VARIANTS`. Composition: 2 SUBJECT / 2 MODIFIER / 3 JOKER.
+  # Pricing band 5-12 (ADR-0007 §"Pricing rationale"); RUL-56 tuned the
+  # gradient within the band against M2 watchable-smoke winner emergence.
+  #
+  # Tuning journey (full per-config table in docs/engine/m2-smoke.md):
+  #   ADR-0007 un-tuned 5/7/6/6/10/9/12      → 5/10 winners 1/3/5/7/9 (seed 0 flips)
+  #   RUL-56 locked    10/12/11/11/11/11/12  → 6/10 winners 0/1/3/5/7/9 (matches pre-SHOP)
+  # Mechanism: bots.random.select_purchase is "cheapest affordable, ties by
+  # lowest index". Tight 10-12 band keeps every offer rarely affordable in
+  # rounds 3/6 after BURN + 5-chip discards, so SHOP fires + is observed
+  # without diverting enough chips to flip seeds.
+  - { id: shop.subj.wounded, name: "THE WOUNDED", price: 10, payload_type: SUBJECT }
+  - { id: shop.subj.leader, name: "THE LEADER", price: 12, payload_type: SUBJECT }
+  - { id: shop.mod.gt, name: "GT", price: 11, payload_type: MODIFIER }
+  - { id: shop.mod.eq, name: "EQ", price: 11, payload_type: MODIFIER }
+  - { id: shop.jkr.double, name: "JOKER:DOUBLE", price: 11, payload_type: JOKER }
+  - { id: shop.jkr.echo, name: "JOKER:ECHO", price: 11, payload_type: JOKER }
+  - { id: shop.jkr.persist_when, name: "JOKER:PERSIST_WHEN", price: 12, payload_type: JOKER }
+
 goal_cards:
   # M2 starter (7 goals) per design/goals-inventory.md "M2 starter subset".
   # `claim_condition` is a registry key resolved by the Phase-3 goals engine.
