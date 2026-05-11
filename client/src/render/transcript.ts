@@ -39,14 +39,18 @@ export function diffStates(prev: GameState, curr: GameState, humanSeat: number |
   if (prev.phase === "resolve" && curr.phase !== "resolve") {
     const effect = prev.revealed_effect ?? curr.revealed_effect ?? null;
     const effectText = effect ? renderCard(effect, humanSeat) : null;
-    const ruleSnapshot = prev.active_rule ? renderActiveRule(prev.active_rule, humanSeat) : null;
+    const ruleSnapshot = prev.active_rule
+      ? renderActiveRule(prev.active_rule, humanSeat, prev.revealed_effect ?? null)
+      : null;
     const ruleTag = ruleSnapshot ? ` [${ruleSnapshot}]` : "";
     const tail = effectText ? ` → ${effectText}` : "";
     lines.push(`Round ${prevRound} rule${ruleTag} resolved${tail}`);
   }
 
   if (currRound !== prevRound) {
-    const newRule = curr.active_rule ? renderActiveRule(curr.active_rule, humanSeat) : null;
+    const newRule = curr.active_rule
+      ? renderActiveRule(curr.active_rule, humanSeat, curr.revealed_effect ?? null)
+      : null;
     if (newRule) {
       lines.push(`--- Round ${currRound} starts. New rule: ${newRule} ---`);
     } else {

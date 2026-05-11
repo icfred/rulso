@@ -1,14 +1,16 @@
 // Render the active rule's build state across multiple lines.
 //
-// Line 1 — semantic preview of the rule template + slots:
-//   ``IF [SUBJECT: …] HAS [QUANT: …] [NOUN: …] THEN [EFFECT: …]``
+// Line 1 — semantic preview of the rule template + slots, with the round's
+// revealed effect rendered inline in the EFFECT position:
+//   ``IF [SUBJECT: …] HAS [QUANT: …] [NOUN: …] THEN [EFFECT: <revealed_effect>]``
+// EFFECT is NOT a player-fillable slot (engine has no SlotKind.EFFECT use); it
+// comes from ``state.revealed_effect`` drawn at round_start. Inline rendering
+// avoids the "[EFFECT: ?] = nothing happened" misread that surfaced in early
+// playtest. Pre-reveal (no revealed_effect yet) renders ``[EFFECT: ?]``.
 //
 // Line 2+ — for each unfilled slot, a list of the human's hand cards that
 // could fill it (so the playtester can map a card to a slot without
 // memorising the legal-actions output). Filter rule: card type === slot type.
-//
-// Effect prediction — when ``state.revealed_effect`` is set, a `Effect:` line
-// renders the effect card text so the player can plan the resolve outcome.
 //
 // JOKER attached — if `rule.joker_attached` is non-null, append it after the
 // preview as ``+ JOKER:VARIANT``.
@@ -35,12 +37,9 @@ export function renderRulePanel(state: GameState, humanSeat: number | null): Rul
   const rule = state.active_rule ?? null;
   if (!rule) return [{ text: "(no active rule)" }];
 
+  const revealedEffect = state.revealed_effect ?? null;
   const lines: RuleLine[] = [];
-  lines.push({ text: renderHeadline(rule, humanSeat) });
-
-  if (state.revealed_effect) {
-    lines.push({ text: `  Effect: ${renderCard(state.revealed_effect, humanSeat)}` });
-  }
+  lines.push({ text: renderHeadline(rule, humanSeat, revealedEffect) });
 
   if (rule.joker_attached) {
     lines.push({ text: `  JOKER attached: ${renderCard(rule.joker_attached, humanSeat)}` });
@@ -63,13 +62,21 @@ export function renderRulePanel(state: GameState, humanSeat: number | null): Rul
   return lines;
 }
 
-export function renderActiveRule(rule: RuleBuilder, humanSeat: number | null): string {
-  return renderHeadline(rule, humanSeat);
+export function renderActiveRule(
+  rule: RuleBuilder,
+  humanSeat: number | null,
+  revealedEffect: Card | null = null,
+): string {
+  return renderHeadline(rule, humanSeat, revealedEffect);
 }
 
-function renderHeadline(rule: RuleBuilder, humanSeat: number | null): string {
+function renderHeadline(
+  rule: RuleBuilder,
+  humanSeat: number | null,
+  revealedEffect: Card | null,
+): string {
   const slotsText = renderSlots(rule, humanSeat);
-  const effectText = renderEffectSlot();
+  const effectText = renderEffectSlot(revealedEffect, humanSeat);
   const joker = rule.joker_attached ? ` + ${renderCard(rule.joker_attached, humanSeat)}` : "";
   return `${rule.template} ${slotsText} THEN ${effectText}${joker}`;
 }
@@ -93,12 +100,13 @@ function renderSlot(slot: Slot, humanSeat: number | null): string {
   return `[${slot.name}: ${body}${modText}]`;
 }
 
-function renderEffectSlot(): string {
-  // The active rule itself does not carry an effect slot post-RUL-31 — the
-  // effect lives on `state.revealed_effect` once revealed. The headline keeps
-  // ``[EFFECT: ?]`` for visual symmetry until the resolve step consumes it,
-  // and the dedicated ``Effect:`` line shows the concrete card text.
-  return "[EFFECT: ?]";
+function renderEffectSlot(revealedEffect: Card | null, humanSeat: number | null): string {
+  // EFFECT is not a player-fillable slot — it comes from
+  // ``state.revealed_effect`` drawn at round_start. Render the revealed card
+  // inline so players see what the round will do before committing cards;
+  // ``?`` only when the effect hasn't been drawn yet (pre-round_start).
+  if (revealedEffect === null) return "[EFFECT: ?]";
+  return `[EFFECT: ${renderCard(revealedEffect, humanSeat)}]`;
 }
 
 function handFor(state: GameState, humanSeat: number | null): readonly Card[] {
