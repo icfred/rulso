@@ -1,4 +1,4 @@
-_Last edited: 2026-05-10 by RUL-53_
+_Last edited: 2026-05-10 by RUL-57_
 
 # bots
 
@@ -30,7 +30,9 @@ Kept in `bots/` for now. Promote to `state.py` or `protocol.py` when the protoco
 **PlayCard** — one entry per (card, open-slot) pair where `card.type == slot.type`:
 - Filled slots are excluded.
 - MUTE token on player excludes all MODIFIER plays.
-- Comparator MODIFIER plays generate two entries: `dice=1` and `dice=2` (1d6 / 2d6).
+- Comparator MODIFIER plays split by ADR-0002 (**RUL-42**):
+  - **OP-only comparators** (`LT`/`LE`/`GT`/`GE`/`EQ` — the M2 bare-OP cards in `_OP_ONLY_COMPARATOR_NAMES`): a single entry with `dice = _OP_ONLY_DEFAULT_DICE` (currently `2`). ADR-0002's "1d6 or 2d6 at play time" choice survives in the `PlayCard.dice` schema, but the bot's heuristic collapses it to a 2d6 default — the 1d6 alternative is not enumerated.
+  - **Other comparator MODIFIERs** (M1.5 grandfathered cards with pre-baked N — e.g. `LT:5`, `GT:10`): two entries, `dice=1` and `dice=2`. The `dice` field is ignored downstream when the card carries a baked N (per ADR-0002 Consequences), so both entries are functionally equivalent; the dual enumeration is the legacy path.
 - **RUL-43**: operator MODIFIERs (`BUT`/`AND`/`OR`/`MORE_THAN`/`AT_LEAST`, per `effects.is_operator_modifier` / `OPERATOR_MODIFIER_NAMES`) share `CardType.MODIFIER` with comparators but attach to a filled slot's `modifiers` tuple rather than `filled_by`. The dedicated `play_operator` action shape lands when ADR-0004's legality extension does — until then the bot **skips** them inside `_enumerate_plays`, so it never picks one that would dead-end at fold time. The card stays in hand rather than crashing the rule-builder's `_parse_quant` on a QUANT mis-fill.
 
 **PlayJoker** (RUL-45) — one entry per distinct JOKER in hand, gated by `legality.can_attach_joker(rule, card)`:
