@@ -63,6 +63,38 @@
         border-color: #1f6feb;
         background: #0c1f3d;
       }
+      .panel {
+        padding: 8px 10px;
+        margin-bottom: 8px;
+        border: 1px solid #30363d;
+        border-radius: 4px;
+        background: #161b22;
+        font-size: 12px;
+        line-height: 1.5;
+      }
+      .panel-label {
+        display: inline-block;
+        min-width: 88px;
+        color: #6e7681;
+        text-transform: uppercase;
+        font-size: 10px;
+        letter-spacing: 0.05em;
+        margin-right: 6px;
+      }
+      .panel-row {
+        display: block;
+      }
+      #rule-preview {
+        font-family: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      }
+      details#log-details > summary {
+        cursor: pointer;
+        color: #6e7681;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin: 12px 0 6px;
+      }
       #actions {
         display: flex;
         flex-wrap: wrap;
@@ -109,8 +141,14 @@
       <span id="status" data-state="connecting">connecting</span>
       <span id="seat"></span>
     </header>
+    <section id="rule-preview" class="panel"></section>
+    <section id="goals" class="panel"></section>
+    <section id="opponents" class="panel"></section>
     <div id="actions"></div>
-    <main id="app"></main>
+    <details id="log-details">
+      <summary>raw envelope log</summary>
+      <main id="app"></main>
+    </details>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
