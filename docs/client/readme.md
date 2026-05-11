@@ -11,7 +11,7 @@ TypeScript + Vite + PixiJS v8 browser app. Receives engine state over WebSocket,
 | `client/package.json` | scaffolded | deps: `pixi.js`; dev: `vite`, `typescript`, `@biomejs/biome`, `json-schema-to-typescript` |
 | `client/tsconfig.json` | live | strict; `noUncheckedIndexedAccess`, `verbatimModuleSyntax`, `noUnusedLocals` |
 | `client/vite.config.ts` | live | `strictPort: 5173`, ES2022 target |
-| `client/biome.json` | live | 2-space indent, double-quote, `lineWidth: 100`; ignores `src/types/generated.ts` |
+| `biome.json` (repo root) | live | 2-space indent, double-quote, `lineWidth: 100`; ignores `src/types/generated.ts`. Lives at root (not `client/`) so the pre-commit hook (cwd=repo root) and `npm run lint` (cwd=client/) resolve the same config — Biome walks ancestors from cwd until it finds `biome.json` |
 | `client/index.html` | live | minimal status badge + `#app` JSON-log container; styles inline (no CSS framework) |
 | `client/src/main.ts` | live | bootstrap: connect to `ws://localhost:8765`, render envelopes as `<pre>` JSON, status flips connecting → connected → closed/error, logs `Hello` seat + protocol version |
 | `client/src/net.ts` | live | `connect(url, handlers)` opens WS, parses envelopes via generated discriminated union, dispatches via `onEnvelope` / `onStatus`. Read-only — no `ActionSubmit` yet |

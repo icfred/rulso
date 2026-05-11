@@ -1,4 +1,4 @@
-_Last updated: 2026-05-11 by orchestrator session — **M3 ENGINE COMPLETE**: RUL-64 (asyncio WS server, single-game per process, broadcast on `GameState` transition, per ADR-0008) shipped via PR #69; RUL-65 (action-shape promotion to `legality.py` — engine's canonical action surface) shipped via PR #68. Workers ran in parallel; orchestrator merged RUL-65 first, rebased RUL-64 in-place with import re-points, merged. Main at **510 tests passing** (499 + 11 new in `test_server.py`), ruff clean. Workflow lesson captured: `uv run --project engine pytest` from project root silently skips async tests (configfile discovery doesn't piggyback on `--project`); `cd engine && uv run pytest` is the verification incantation. Next M3 dispatchable: client bootstrap (Vite + Pixi + TS scaffold + WS client) — file + emit hand-over._
+_Last updated: 2026-05-11 by orchestrator session — **M3 CLIENT BOOTSTRAP LIVE**: RUL-66 (Vite + Pixi v8 + TS scaffold; WS client; `pydantic2ts` + `json-schema-to-typescript` type-gen pipeline; hand-curated discriminated unions for `TypeAdapter` aliases; `biome.json` at repo root for hook + npm convergence) shipped via PR #70. Read-only client; END-state rendering deferred to next M3 sub-issue (input + minimal control). Workflow lesson captured: ticket-author rule — DoD bullets that need out-of-scope actions to reach the verification state are unsatisfiable by construction; either fold the surface into scope or move the bullet to the consuming ticket. Next M3 dispatchable: client input + minimal control (submit `ActionSubmit` for the human seat — covers END-state rendering as a side-effect)._
 
 # Rulso — orchestrator bootstrap
 
@@ -14,7 +14,7 @@ Linear board: https://linear.app/rulso (team `RUL`, projects: Engine / Infra / B
 | RUL-15 | M1.5: Watchable engine | First moment the game is *real* | **Done** (closed 2026-05-10) |
 | RUL-24 | M2: Full card set | Every card type and mechanic from cards.yaml works | **Done** (closed 2026-05-10) — gap-close set tracked as M2.5 below. |
 | _(no parent)_ | **M2.5: Mechanic gaps** (pre-M3 sweep) | Close M2 mechanics that ship in code but not in play | **Done** (closed 2026-05-11) — RUL-57/60/62 in batch 1 + RUL-61/56 in batch 2. All 5 shipped; M2.5 follow-ups under RUL-24 cleared. |
-| RUL-58 | **M3: Foundation/Minimal Client** | Human can read the board, make a meaningful decision, reach a winner | **In Progress (opened 2026-05-11)** — Engine side complete: RUL-63 (envelope, PR #66), RUL-64 (server, PR #69). Next dispatchable sub-issue: client bootstrap (Vite/Pixi/TS scaffold + WS client). |
+| RUL-58 | **M3: Foundation/Minimal Client** | Human can read the board, make a meaningful decision, reach a winner | **In Progress (opened 2026-05-11)** — Engine side complete (RUL-63 envelope PR #66, RUL-64 server PR #69) + client bootstrap live (RUL-66 PR #70). Next dispatchable sub-issue: client input + minimal control (`ActionSubmit` for human seat). Then in sequence: decision-support rendering, polish, finally re-wire `bots/human` TTY through the WS. |
 | RUL-59 | **M4: Smart bot (ISMCTS)** | ISMCTS surfaces real design feedback in solo play | **Backlog** — blocked-by RUL-58; payoff design draws on M3 playtest signal. |
 | RUL-23 | Meta — orchestrator-authored cross-cutting commits | Permanent home for orchestrator commits | Permanent In Progress |
 
@@ -32,7 +32,40 @@ Foundation Client DoD bar is "ugly but playable": engine WS protocol + server, c
 
 ## In flight
 
-**Nothing in flight.** RUL-58 M3 engine side fully shipped (RUL-63 envelope + RUL-64 server). Next dispatchable: M3 client bootstrap (Vite + Pixi + TS scaffold + `net.ts` WS client connecting to `rulso-server`). Then in sequence: TS type-generation pipeline, decision-support rendering, click-to-play input, dice text, finally re-wire `bots/human` TTY through the WS (per RUL-64's "Out of scope" — final M3 sub-issue).
+**Nothing in flight.** RUL-58 M3 engine + client bootstrap fully shipped (RUL-63 envelope, RUL-64 server, RUL-66 client). Next dispatchable: client input + minimal control — wire `ActionSubmit` from the UI for the human seat (single button per legal action is enough; richer rendering follows). Covers the deferred RUL-66 DoD bullet (END-state rendering) as a side-effect, since input unblocks the engine's game loop past the human seat's BUILD turn. Then in sequence: decision-support rendering (full card text, semantic rule preview, goals visible, opponents' public state), then re-wire `bots/human` TTY through the WS (per RUL-64's "Out of scope" — final M3 sub-issue).
+
+### RUL-66 ship summary (2026-05-11, PR #70)
+
+| Decision | Locked | Rationale |
+|---|---|---|
+| Generator | `pydantic-to-typescript` (engine dev-dep) → `json-schema-to-typescript` (client dev-dep, `client/node_modules/.bin/json2ts`); two-step pipeline in `scripts/regenerate-types.sh` | `pydantic2ts` introspects `BaseModel` subclasses cleanly; `json2ts` does the JSON-Schema → TS conversion with discriminator support. Single canonical pipeline, both deps pinned, idempotent re-runs. |
+| `TypeAdapter` aliases | Hand-curated `client/src/types/envelopes.ts` re-exports `ServerEnvelope` / `ClientAction` / `ClientEnvelope` with literal-typed `type` / `kind` fields | `pydantic2ts` only surfaces `BaseModel` subclasses, not module-level `Annotated[Union[...], Field(discriminator=...)]` aliases (those are `TypeAdapter` aliases, not `BaseModel`s). The hand-curated wrapper is small (~40 lines), stable per ADR-0008, and produces the discriminated-union narrowing TypeScript expects. |
+| `biome.json` location | Repo root (not `client/`) | Pre-commit hook runs from repo root with cwd=root; `npm run lint` runs from `client/` with cwd=client/. Biome walks ancestors from cwd until it finds `biome.json` — placing it at root means both invocation paths converge on the same config. Without this, the hook reverts to Biome defaults (tab indent) and reformats client files away from the project's space-indent style. |
+| Top-level `scripts/` | New | First user; hand-over named the path explicitly. `scripts/regenerate-types.sh` is the only inhabitant. |
+| `docs/client/readme.md` | New (worker-authored, hand-over allowed) | Mirrors `docs/engine/readme.md` shape (surface table + commands + smoke); orchestrator-owned `docs/readme.md` and `docs/engine/readme.md` not touched. |
+| `tech.md §Type generation` | Promoted from "proposed" to shipped | The pipeline went from sketch to live; doc convention requires `tech.md` reflect actually-shipped state. §"How to run" unchanged. |
+| END-state rendering DoD | **Unsatisfiable by construction; deferred** | Read-only client; human seat (0) blocks indefinitely on first BUILD turn (`Pass` is server-side-only on empty legal sets per ADR-0008; chips≥5 keeps discard branch non-empty so legal set never empties). Worker proved protocol path healthy via one-shot Node driver (7800 envelopes round-tripped). END-state proof falls out naturally of the next sub-issue (input). Workflow lesson captured (2026-05-11 entry on DoD-scope symmetry). |
+
+**Worker hand-back flags addressed**:
+
+- DoD bullet "terminal `StateBroadcast` … status flips to closed cleanly" was unsatisfiable from inside the ticket's read-only scope. **Decision**: accept partial DoD; END-state rendering covered by the next sub-issue (input). New workflow lesson captured: DoD bullets must be satisfiable from inside the ticket's scope.
+- `biome.json` at root rather than `client/`: correct call (hook + npm cwd convergence). Documented in this RUL-23 sweep — `docs/engine/readme.md` "Pre-commit hook contract" expanded; `docs/client/readme.md` surface table fixed (worker labelled the row `client/biome.json` — actual path is `biome.json` at root).
+- New top-level `scripts/`: expected; hand-over explicit. No follow-up.
+- `tech.md §Type generation` promoted: correct call; tech.md is public source of truth, must reflect shipped state.
+- `client/src/types/envelopes.ts` hand-curated: correct call given pydantic2ts limitation. Stable per ADR-0008. Documented in `docs/client/readme.md` line 19.
+
+**Cross-cutting fixes landed via this RUL-23 sweep**:
+
+- `docs/client/readme.md`: corrected `client/biome.json` row → `biome.json` (repo root) with the hook/npm convergence rationale inline.
+- `docs/engine/readme.md`: `_Last edited:` bumped to post-RUL-66; "Pre-commit hook contract" section expanded to call out that `biome.json` lives at the repo root and Biome's ancestor-walk is what makes hook+npm converge on the same config.
+- `docs/workflow_lessons.md`: new entry 2026-05-11 — DoD-scope symmetry rule (DoD bullets must be satisfiable from inside the ticket's scope; the END-state rendering bullet on a read-only client was the precedent). Template-worthy: yes — promotes to global `CLAUDE.md` as a ticket-shape rule alongside the existing data-loadable / data-observable split.
+- STATUS.md re-anchored to post-RUL-66 (this entry).
+
+### Open follow-ups post-RUL-64/65/66
+
+- **`_OP_ONLY_COMPARATOR_NAMES` duplication** between `cli.py` and `server.py` — promote to `legality.py` (or `effects.py`). **Parallel-safe one-PR refactor**, low priority.
+- **Server-side `DiscardRedraw` placeholder**: `server.py` currently treats `DiscardRedraw` as `pass_turn`. Wire the full discard pipeline when client-side discard UX lands (likely the next M3 sub-issue after input).
+- **TS type-gen `state.py` coverage**: RUL-66's pipeline emits the `GameState` transitive closure via `BaseModel` subclass introspection — but the type-gen script currently introspects `rulso.protocol` only. If the rendering sub-issue needs richer state types directly (vs unwrapping `StateBroadcast.state`), extend the script to introspect `rulso.state` too. Not a blocker — the protocol envelope's `state: GameState` field already pulls the closure.
 
 ### RUL-64 + RUL-65 ship summary (2026-05-11, PRs #68 / #69)
 

@@ -1,4 +1,4 @@
-_Last edited: 2026-05-11 by RUL-23 (M3 sweep — RUL-64 engine WS server live; RUL-65 promoted action surface to `legality.py`)_
+_Last edited: 2026-05-11 by RUL-23 (post-RUL-66: client area now live — see [docs/client/readme.md](../client/readme.md); biome.json lives at repo root)_
 
 # engine
 
@@ -76,7 +76,7 @@ uv run ruff format --check    # CI check
 
 No manual `PATH=` munging, no global `ruff` install. The hook resolves ruff through `uv` regardless of caller environment.
 
-(Client side: `npm install` in `client/`; the hook calls `client/node_modules/.bin/biome` directly.)
+(Client side: `npm install` in `client/`; the hook calls `client/node_modules/.bin/biome` directly from the repo root. `biome.json` lives at the **repo root** — Biome walks ancestors from cwd, so the same config resolves whether the hook (cwd=repo root) or `npm run lint` (cwd=client/) invokes it.)
 
 ## Conventions
 

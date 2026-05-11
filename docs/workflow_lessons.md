@@ -399,3 +399,36 @@ Two reinforcing factors. (1) The `feedback_readme_cwd_context.md` memory rule es
 Lift to `feedback_readme_cwd_context.md`: extend the rule to call out that `uv run --project engine pytest` only finds the `[tool.pytest.ini_options]` block if pytest can resolve the engine pyproject as its configfile. For invocations where rootdir matters (pytest, ruff with project-relative paths, anything that walks ancestors for config), prefer either (a) `cd engine && uv run pytest` or (b) `uv run --project engine pytest engine/tests`. The bare `uv run --project engine pytest` from project root works for sync-only suites but silently regresses on any plugin-mode that depends on the configfile being found.
 
 Worth promoting to global `CLAUDE.md`: in monorepos with no root `pyproject.toml`, pre-merge verification commands MUST quote the cwd or pass an explicit path. "uv run --project X pytest" is necessary but not sufficient — pytest's rootdir discovery does not piggyback on `--project`.
+
+---
+
+---
+date: 2026-05-11
+ticket-context: RUL-66
+template-worthy: yes
+---
+
+## What happened
+
+RUL-66 (M3 client bootstrap) shipped with one DoD bullet self-contradicting the ticket's own scope:
+
+> Page does NOT crash when the game terminates (terminal `StateBroadcast` with `winner` set + `phase=END` is rendered like any other broadcast; status flips to "closed" cleanly)
+
+The ticket scope was explicit: read-only client, no `ActionSubmit`, input lands in a separate sub-issue. With `human_seat=0` and a read-only client, the engine's game loop blocks indefinitely on the first BUILD turn for seat 0 — it can never reach `phase=END`. `Pass` is server-side-only on empty legal sets (per ADR-0008), and chips≥5 keeps the discard branch non-empty, so the legal set is never empty for seat 0. The DoD bullet was unsatisfiable by construction.
+
+The worker noticed at smoke time, stop-conditioned correctly, and proved the protocol path is healthy via a one-shot Node driver that submits `discard_redraw` (7800 envelopes round-tripped end-to-end). Hand-back flagged the bullet as unsatisfiable and proposed END-state rendering "naturally falls out of the next sub-issue that wires `ActionSubmit` from the UI". Orchestrator merged with the partial-DoD acceptance noted in the merge sweep and a follow-up captured.
+
+## Root cause
+
+Two reinforcing factors. (1) The orchestrator wrote the DoD bullet from the *output* the page should reach (END state rendered) without checking the *path* the page can take to get there given the ticket's own "read-only" scope. The engine action surface (RUL-65) and the server's loop semantics (RUL-64) were both fresh in context — including that `Pass` is server-side-only on empty legal sets. The bullet should have been written conditionally ("if the engine drives to END via bot-only seats, the page renders the terminal broadcast cleanly") or scoped to a separate verification path ("smoke from the engine-only CLI proves END is reachable; client-side END rendering verified once input lands"). (2) The "ugly but connected" framing of M3 sub-issues makes it tempting to write end-to-end DoD bullets that cross the read-only/interactive boundary — but interactive verification needs interactive scope. RUL-66 was deliberately read-only to keep the bootstrap reviewable; the END-state bullet violated that scope.
+
+## Fix in project
+
+- The orchestrator's STATUS.md sweep records the partial-DoD acceptance, the worker's protocol-round-trip evidence (Node driver), and the natural follow-up (next M3 sub-issue covers END-state rendering once input is wired).
+- Memory-rule candidate: when writing DoD bullets that depend on game-end side-effects (terminal broadcast, win-condition rendering, status-flip-to-closed), check the action surface required to *reach* game-end. If that surface is out of scope for this ticket, scope the bullet to a separate verification path or split it into a sibling DoD line that the next ticket inherits.
+
+## Proposed template change
+
+Hand-over template (`workflows/orchestrator.md`): when the ticket scope explicitly excludes a class of action (read-only, server-only, validation-only), the DoD must not include bullets whose only proof requires that class of action. One-line rule: "Each DoD bullet must be satisfiable from inside the ticket's scope; if a verification crosses out-of-scope work, either fold the surface into scope or move the verification to the consuming ticket's DoD."
+
+Worth promoting to global `CLAUDE.md` as a ticket-shape rule alongside the existing "Substrate-and-data tickets must split DoD into (a) data loadable + (b) data observable in runtime" rule. Both are scope/coverage symmetry rules — they catch the same shape of mistake at the ticket-author step rather than the worker step.
