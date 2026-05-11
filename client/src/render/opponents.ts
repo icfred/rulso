@@ -1,4 +1,5 @@
-// Render every non-human seat's public state as one line.
+// Render every non-human seat's public state as one line — including hand
+// size (count only, never identities).
 //
 // Floating-label assignments (LEADER / WOUNDED / GENEROUS / CURSED) come
 // from `state.labels` on the wire — the engine publishes the canonical
@@ -18,7 +19,8 @@ function renderOne(player: Player, labelSuffix: string): string {
   const labels = labelSuffix ? ` [${labelSuffix}]` : "";
   const statusText = renderStatus(player);
   const status = statusText ? `, status: ${statusText}` : "";
-  return `Player ${player.seat}${labels} — chips: ${player.chips ?? 0}, VP: ${player.vp ?? 0}${status}`;
+  const hand = player.hand?.length ?? 0;
+  return `Player ${player.seat}${labels} — chips: ${player.chips ?? 0}, VP: ${player.vp ?? 0}, hand: ${hand}${status}`;
 }
 
 function renderStatus(player: Player): string {
@@ -38,8 +40,6 @@ function labelSuffix(state: GameState, player: Player): string {
   for (const [name, holders] of Object.entries(state.labels ?? {})) {
     if (holders.includes(player.id)) parts.push(name);
   }
-  // Status-token labels stay client-derived until the M2 status-apply ticket
-  // wires them onto `state.labels`.
   if (player.status?.marked) parts.push("THE MARKED");
   if (player.status?.chained) parts.push("THE CHAINED");
   return parts.join(", ");

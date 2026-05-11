@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Rulso — M3 client (ugly but connected)</title>
+    <title>Rulso — M3 client (ugly but legible)</title>
     <style>
       :root {
         color-scheme: dark;
@@ -22,6 +22,7 @@
         padding-bottom: 8px;
         border-bottom: 1px solid #30363d;
         margin-bottom: 12px;
+        flex-wrap: wrap;
       }
       h1 {
         margin: 0;
@@ -43,68 +44,71 @@
         font-size: 12px;
         color: #8b949e;
       }
+      #header-line {
+        width: 100%;
+        font-size: 13px;
+        color: #c9d1d9;
+        padding: 4px 0 2px;
+        letter-spacing: 0.04em;
+      }
       main {
-        display: flex;
-        flex-direction: column;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
         gap: 8px;
-      }
-      pre {
-        margin: 0;
-        padding: 8px;
-        background: #161b22;
-        border: 1px solid #30363d;
-        border-radius: 4px;
-        font-size: 12px;
-        line-height: 1.4;
-        white-space: pre-wrap;
-        word-break: break-word;
-      }
-      pre.outgoing {
-        border-color: #1f6feb;
-        background: #0c1f3d;
       }
       .panel {
         padding: 8px 10px;
-        margin-bottom: 8px;
         border: 1px solid #30363d;
         border-radius: 4px;
         background: #161b22;
         font-size: 12px;
         line-height: 1.5;
+        min-height: 32px;
       }
-      .panel-label {
-        display: inline-block;
-        min-width: 88px;
-        color: #6e7681;
-        text-transform: uppercase;
+      .panel-title {
         font-size: 10px;
-        letter-spacing: 0.05em;
-        margin-right: 6px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: #6e7681;
+        margin-bottom: 4px;
+        border-bottom: 1px solid #21262d;
+        padding-bottom: 3px;
       }
       .panel-row {
-        display: block;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      .panel-indent {
+        padding-left: 16px;
+        color: #8b949e;
+        font-size: 11px;
+      }
+      .grid-wide {
+        grid-column: 1 / -1;
       }
       #rule-preview {
         font-family: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
       }
-      details#log-details > summary {
-        cursor: pointer;
-        color: #6e7681;
+      #transcript {
+        max-height: 220px;
+        overflow-y: auto;
         font-size: 11px;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        margin: 12px 0 6px;
+        line-height: 1.45;
+      }
+      .transcript-line {
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      .transcript-own {
+        color: #79c0ff;
+      }
+      .transcript-error {
+        color: #ff7b72;
       }
       #actions {
         display: flex;
-        flex-wrap: wrap;
+        flex-direction: column;
         gap: 6px;
-        padding: 8px;
-        margin-bottom: 8px;
-        border: 1px dashed #30363d;
-        border-radius: 4px;
-        background: #161b22;
-        min-height: 32px;
       }
       #actions:empty::before {
         content: "waiting for human turn…";
@@ -112,7 +116,19 @@
         font-size: 12px;
         font-style: italic;
       }
-      #actions button {
+      .action-section-header {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: #8b949e;
+        margin-top: 4px;
+      }
+      .action-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .action-button {
         font: inherit;
         font-size: 11px;
         padding: 4px 8px;
@@ -122,15 +138,58 @@
         border-radius: 3px;
         cursor: pointer;
         text-align: left;
-        max-width: 100%;
-        word-break: break-all;
       }
-      #actions button:hover {
+      .action-button:hover {
         background: #30363d;
         border-color: #6e7681;
       }
-      #actions button:disabled {
+      .action-button:disabled {
         opacity: 0.5;
+        cursor: not-allowed;
+      }
+      .discard-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .discard-chip {
+        font: inherit;
+        font-size: 11px;
+        padding: 3px 7px;
+        background: #161b22;
+        color: #c9d1d9;
+        border: 1px dashed #30363d;
+        border-radius: 3px;
+        cursor: pointer;
+      }
+      .discard-chip:hover {
+        border-color: #6e7681;
+      }
+      .discard-chip.selected {
+        background: #1f2937;
+        border-color: #79c0ff;
+        color: #79c0ff;
+        border-style: solid;
+      }
+      .discard-counter {
+        font-size: 11px;
+        color: #8b949e;
+      }
+      .discard-submit {
+        align-self: flex-start;
+        font: inherit;
+        font-size: 11px;
+        padding: 4px 10px;
+        background: #1f6feb;
+        color: #f0f6fc;
+        border: 1px solid #1f6feb;
+        border-radius: 3px;
+        cursor: pointer;
+      }
+      .discard-submit:disabled {
+        background: #21262d;
+        color: #6e7681;
+        border-color: #30363d;
         cursor: not-allowed;
       }
     </style>
@@ -140,15 +199,34 @@
       <h1>Rulso · M3 client</h1>
       <span id="status" data-state="connecting">connecting</span>
       <span id="seat"></span>
+      <div id="header-line"></div>
     </header>
-    <section id="rule-preview" class="panel"></section>
-    <section id="goals" class="panel"></section>
-    <section id="opponents" class="panel"></section>
-    <div id="actions"></div>
-    <details id="log-details">
-      <summary>raw envelope log</summary>
-      <main id="app"></main>
-    </details>
+    <main>
+      <section class="panel grid-wide">
+        <div class="panel-title">Active rule</div>
+        <div id="rule-preview"></div>
+      </section>
+      <section class="panel grid-wide">
+        <div class="panel-title">Transcript</div>
+        <div id="transcript"></div>
+      </section>
+      <section class="panel">
+        <div class="panel-title">You</div>
+        <div id="you"></div>
+      </section>
+      <section class="panel">
+        <div class="panel-title">Goals</div>
+        <div id="goals"></div>
+      </section>
+      <section class="panel grid-wide">
+        <div class="panel-title">Opponents</div>
+        <div id="opponents"></div>
+      </section>
+      <section class="panel grid-wide">
+        <div class="panel-title">Actions</div>
+        <div id="actions"></div>
+      </section>
+    </main>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
