@@ -10,11 +10,18 @@
 
 import type {
   ActionSubmit,
+  Card,
   DiscardRedraw,
   ErrorEnvelope,
+  GameState,
+  GoalCard,
   Hello,
+  Play,
   PlayCard,
   PlayJoker,
+  Player,
+  RuleBuilder,
+  Slot,
   StateBroadcast,
 } from "./generated";
 
@@ -32,10 +39,17 @@ export type ClientEnvelope = ActionSubmit & { type: "action_submit" };
 
 export type {
   ActionSubmit,
+  Card,
   DiscardRedraw,
   ErrorEnvelope,
+  GameState,
+  GoalCard,
   Hello,
+  Play,
   PlayCard,
   PlayJoker,
+  Player,
+  RuleBuilder,
+  Slot,
   StateBroadcast,
 };
