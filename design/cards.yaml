@@ -170,9 +170,36 @@ joker_cards:
   - { id: jkr.echo, name: "JOKER:ECHO" }
 
 effect_cards:
-  # M2 starter (12 cards) per design/effects-inventory.md "M2 starter subset".
-  # Render names follow `<KIND_TOKEN>[:<MAG>][@<TARGET_MOD>]` — dispatcher in
-  # Phase-3 effects.py parses on apply.
+  # M2 starter (14 cards) per design/effects-inventory.md "M2 starter subset"
+  # and design/status-tokens.md "M2 starter subset of status-applying cards"
+  # (7 status cards covering all 5 tokens + 2 clearing cards). Render names
+  # follow `<KIND_TOKEN>[:<MAG>][@<TARGET_MOD>]` — dispatcher in
+  # engine/src/rulso/effects.py parses on apply.
+  #
+  # NB. The effect deck is loaded 1:1 from this list (no separate
+  # `effect_deck:` block); :func:`rulso.cards.load_effect_cards` yields a
+  # tuple in YAML order, and :func:`rulso.rules._draw_effect_card` pops from
+  # the end. Reordering this list shifts seed-0 effect reveals — keep
+  # additions appended at the head (top of YAML) to preserve the established
+  # late-round pop sequence for seeded tests.
+  #
+  # RUL-61: `eff.marked.apply` and `eff.chained.clear` close the
+  # design/status-tokens.md "M2 starter subset" gap. Before this addition
+  # MARKED was decorative (handler registered in status.py, no card invoked
+  # it) and CHAINED was permanent (no clearing card; once chained, goal-locked
+  # for the remainder of the game). Both new cards are appended at the head
+  # to preserve seed-0 reveal order for the existing 12 cards.
+  # Target-modifier choice:
+  #   * `APPLY_MARKED` — default `all_matched`. Per design/status-tokens.md
+  #     "MARKED + non-MARKED + EACH PLAYER rule" MARKED narrows the next
+  #     `EACH PLAYER` rule to the marked cohort; marking the matched players
+  #     produces the "you've been chosen, the next rule is for you" mechanic.
+  #     `EXCEPT_MATCHED` would mark the spared cohort — defensible but not
+  #     the design's default reading.
+  #   * `CLEAR_CHAINED` — default `all_matched`. Removes the goal-claim block
+  #     from rule-matched players.
+  - { id: eff.marked.apply, name: APPLY_MARKED }
+  - { id: eff.chained.clear, name: CLEAR_CHAINED }
   - { id: eff.chips.gain.5, name: "GAIN_CHIPS:5" }
   - { id: eff.chips.gain.10, name: "GAIN_CHIPS:10" }
   - { id: eff.chips.drain.5, name: "LOSE_CHIPS:5" }

@@ -293,7 +293,12 @@ def test_load_effect_cards_returns_frozen_tuple_typed_effect() -> None:
 
 
 def test_load_effect_cards_covers_m2_starter_subset() -> None:
-    """All 12 M2 starter effect cards from design/effects-inventory.md."""
+    """All 14 M2 starter effect cards.
+
+    Covers design/effects-inventory.md + the 7 status cards from
+    design/status-tokens.md "M2 starter subset of status-applying cards"
+    (RUL-61 closed the MARKED/CHAINED clear gap).
+    """
     ids = {c.id for c in load_effect_cards()}
     assert ids == {
         "eff.chips.gain.5",
@@ -305,10 +310,35 @@ def test_load_effect_cards_covers_m2_starter_subset() -> None:
         "eff.mute.apply",
         "eff.blessed.apply",
         "eff.chained.apply",
+        "eff.marked.apply",
         "eff.burn.clear.1",
+        "eff.chained.clear",
         "eff.draw.2",
         "eff.noop",
     }
+
+
+def test_load_effect_cards_status_subset_covers_all_five_tokens() -> None:
+    """The status-applying subset spans every PlayerStatus field.
+
+    Per design/status-tokens.md the M2 starter ships 7 status cards: one
+    applier per token + clearing cards for the two tokens without natural
+    decay (BURN and CHAINED). RUL-61 added the MARKED applier and CHAINED
+    clearer to close this set.
+    """
+    names = {c.name for c in load_effect_cards()}
+    assert "APPLY_MARKED" in names
+    assert "CLEAR_CHAINED" in names
+    # Sanity: every status apply/clear pair the M2 starter promises is loadable.
+    assert {
+        "APPLY_BURN:1",
+        "APPLY_MUTE",
+        "APPLY_BLESSED@EXCEPT_MATCHED",
+        "APPLY_MARKED",
+        "APPLY_CHAINED",
+        "CLEAR_BURN:1",
+        "CLEAR_CHAINED",
+    } <= names
 
 
 def test_effect_cards_have_unique_ids() -> None:

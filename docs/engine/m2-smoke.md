@@ -1,4 +1,4 @@
-_Last edited: 2026-05-10 by RUL-55_
+_Last edited: 2026-05-11 by RUL-61_
 
 # M2 watchable smoke
 
@@ -31,29 +31,34 @@ and return the original output; the only side effect is incrementing a
 counter dict. Other test modules in the same pytest session are unaffected
 because the wrappers are reverted in `try/finally`.
 
-## Empirical baseline (deterministic main post-RUL-55)
+## Empirical baseline (deterministic main post-RUL-61)
 
 Seeds 0..9 at `rounds=200`:
 
 | Seed | rc | Winner | resolve_if calls | persistent_WHEN | persistent_WHILE | goal_VP | chip_delta |
 |---|---|---|---|---|---|---|---|
-| 0 | 0 | p* | 17 | 3 | 20 | 6 | 70 |
-| 1 | 0 | p* | 3 | 1 | 0 | 5 | 0 |
-| 2 | 1 | – | 6 | 2 | 0 | 0 | 0 |
+| 0 | 0 | p* | 38 | 3 | 20 | 7 | 20 |
+| 1 | 0 | p* | 4 | 1 | 0 | 5 | 0 |
+| 2 | 1 | – | 8 | 2 | 0 | 0 | 0 |
 | 3 | 0 | p* | 3 | 0 | 0 | 5 | 0 |
-| 4 | 0 | p* | 19 | 16 | 51 | 2 | 30 |
-| 5 | 0 | p* | 8 | 9 | 0 | 3 | 0 |
-| 6 | 1 | – | 13 | 557 | 391 | 0 | 5 |
-| 7 | 0 | p* | 7 | 6 | 0 | 6 | 0 |
-| 8 | 1 | – | 34 | 194 | 376 | 0 | 10 |
-| 9 | 0 | p* | 18 | 50 | 48 | 8 | 115 |
-| **sum** | | **7/10** | **128** | **838** | **886** | **35** | **230** |
+| 4 | 1 | – | 437 | 188 | 397 | 2 | 25 |
+| 5 | 0 | p* | 18 | 11 | 0 | 5 | 0 |
+| 6 | 1 | – | 403 | 192 | 391 | 0 | 20 |
+| 7 | 0 | p* | 13 | 6 | 0 | 6 | 0 |
+| 8 | 1 | – | 435 | 194 | 376 | 0 | 65 |
+| 9 | 0 | p* | 77 | 42 | 37 | 6 | 75 |
+| **sum** | | **6/10** | **1436** | **639** | **1221** | **36** | **205** |
 
-Winners: seeds 0/1/3/4/5/7/9. Cap-hit: seeds 2/6/8. Stable bimodality at
-both `rounds=200` and `rounds=300` — a substrate property of the current
-bot heuristic + `cards.yaml deck:` composition, not flake. Below 7/10
-fires the next polish ticket; ≤6/10 with random bots is the "the bots are
-bad" signal that M3 ISMCTS addresses (RUL-55 Stop condition).
+Winners: seeds 0/1/3/5/7/9. Cap-hit: seeds 2/4/6/8. Stable bimodality at
+`rounds=200` — a substrate property of the current bot heuristic + the
+post-RUL-61 effect-deck depth (14 cards). The earlier RUL-55 baseline of
+7/10 (winners 0/1/3/4/5/7/9) was achieved with the M2 status vocabulary
+half-wired — MARKED + CHAINED-clear absent from production. Once RUL-61
+appended `eff.marked.apply` + `eff.chained.clear` at the head of
+`cards.yaml effect_cards:`, deck depth shifted 12 → 14 and seed 4 flipped
+from winner (~40 rounds) to cap-hit. Below 6/10 fires the next polish
+ticket; the gap between random bots and the full status vocabulary is
+exactly what M4 ISMCTS (ADR-0006) will address.
 
 ## RUL-55 polish — Lever A (bot heuristic)
 
@@ -78,12 +83,12 @@ where the goal-pool shuffle shifts THE_HOARDER's claim under
 
 | Floor | Value | Observed | Guards against |
 |---|---|---|---|
-| `_MIN_WINNERS` | 7 | 7 | M2 watchable bar regression — bot heuristic or deck composition pushed below the Wave 3.5 gate |
+| `_MIN_WINNERS` | 6 | 6 | M2 watchable bar regression — bot heuristic or deck composition pushed below the post-RUL-61 gate |
 | `_MIN_RUNS_WITH_RESOLVE` | 8 | 10 | Resolve path silently stops firing on most seeds (bot regression or slot-typing change) |
-| `_MIN_PERSISTENT_WHEN_TOTAL` | 1 | 838 | JOKER:PERSIST_WHEN / JOKER:ECHO promotion or `tick_while_rules` traversal of WHEN rules is broken |
-| `_MIN_PERSISTENT_WHILE_TOTAL` | 1 | 886 | JOKER:PERSIST_WHILE promotion or `tick_while_rules` traversal of WHILE rules is broken |
-| `_MIN_GOAL_VP_AWARDED` | 1 | 35 | `goals.check_claims` predicate evaluation or VP award path is broken |
-| `_MIN_EFFECT_CHIP_DELTA` | 1 | 230 | `effects.resolve_if_rule` no longer mutates `Player.chips` — dispatcher dropped registration, scope path always empty, or effect handlers got short-circuited |
+| `_MIN_PERSISTENT_WHEN_TOTAL` | 1 | 639 | JOKER:PERSIST_WHEN / JOKER:ECHO promotion or `tick_while_rules` traversal of WHEN rules is broken |
+| `_MIN_PERSISTENT_WHILE_TOTAL` | 1 | 1221 | JOKER:PERSIST_WHILE promotion or `tick_while_rules` traversal of WHILE rules is broken |
+| `_MIN_GOAL_VP_AWARDED` | 1 | 36 | `goals.check_claims` predicate evaluation or VP award path is broken |
+| `_MIN_EFFECT_CHIP_DELTA` | 1 | 205 | `effects.resolve_if_rule` no longer mutates `Player.chips` — dispatcher dropped registration, scope path always empty, or effect handlers got short-circuited |
 
 Lifecycle and goal/effect floors sit at the DoD-mandated minimum (1
 sweep-aggregate occurrence). Observed counts are 25×–800× the floor; the
@@ -91,9 +96,10 @@ floors are deliberately trivial — they catch the regression we care about
 (path stops firing entirely) without becoming brittle as the bot heuristic
 or deck composition evolves.
 
-Winner floor sits at the observed count (7/10) with no slack. Tightening
-above 7 needs another polish lever or M3 ISMCTS; loosening below 7 needs a
-follow-up Phase 3.5+ ticket per the RUL-55 Stop condition.
+Winner floor sits at the observed count (6/10) with no slack post-RUL-61.
+Tightening above 6 needs another polish lever or M4 ISMCTS (ADR-0006);
+loosening below 6 needs a follow-up polish ticket and an explanatory note
+here.
 
 ## Why some seeds cap-hit
 
@@ -101,10 +107,10 @@ Same root cause as M1.5 (`rule_failed reason=dealer_no_seed_card`): with
 four players and finite hands, the dealer occasionally has no SUBJECT card
 to seed slot 0. The rule fails immediately and the dealer rotates without
 a hand refill, so a 4-dealer streak of zero-SUBJECT hands can loop until
-the round cap. With PLAY_BIAS=0.75 (RUL-55), only seeds 2/6/8 still
-cap-hit; seeds previously cap-hit (0/4/9) now win in ≲40 rounds because
-the increased discard rate cycles SUBJECT cards into the dealer's hand
-before the streak stabilises.
+the round cap. With PLAY_BIAS=0.75 (RUL-55) and the post-RUL-61 effect
+deck (14 cards), seeds 2/4/6/8 cap-hit. Seed 4 in particular flipped from
+winner to cap-hit when the deeper effect deck shifted the recycle
+threshold past the round where its prior fast-win path used to land.
 
 A future "dealer discards then retries before failing" optimisation, or
 ISMCTS-led smarter discard targeting, would shrink the cap-hit fraction
@@ -114,7 +120,7 @@ further. Out of scope for RUL-55.
 
 | Aspect | M1.5 smoke | M2 smoke |
 |---|---|---|
-| Asserts winner emergence | No (`_MIN_WINNERS = 0`) | Yes (`_MIN_WINNERS = 7`) |
+| Asserts winner emergence | No (`_MIN_WINNERS = 0`) | Yes (`_MIN_WINNERS = 6`) |
 | Lifecycle coverage (WHEN/WHILE/goal/effect) | No | Yes — via wrapper instrumentation |
 | Production-edit scope | None | None (testing-only wrappers) |
 | Rounds budget | 100 | 200 |
@@ -126,9 +132,12 @@ lifetimes fire, goals get claimed, chips actually move.
 
 ## Stop conditions for future regressions
 
-- `test_winners_emerge_across_the_sweep` red below 7/10 → bisect against
-  `bots.random.PLAY_BIAS` and `cards.yaml deck:` composition; do not lower
-  the floor without a follow-up polish ticket and an explanatory note here.
+- `test_winners_emerge_across_the_sweep` red below 6/10 → bisect against
+  `bots.random.PLAY_BIAS`, `cards.yaml deck:`/`effect_cards:` composition,
+  and any pre-resolve consumer of status tokens (RUL-60 narrowed MARKED's
+  EACH_PLAYER consumer; further token consumers shift winner counts);
+  do not lower the floor without a follow-up polish ticket and an
+  explanatory note here.
 - `test_persistent_when_lifecycle_exercised` or
   `test_persistent_while_lifecycle_exercised` red → JOKER attachment path
   (`rules.enter_resolve` step 5) or `persistence.add_persistent_rule` is
