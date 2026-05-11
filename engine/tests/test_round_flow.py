@@ -281,8 +281,13 @@ def test_advance_phase_from_resolve_invokes_enter_resolve() -> None:
 
 
 def test_dealer_rotates_across_four_rounds_via_failed_rules() -> None:
-    """Inject all-empty hands so every round fails; assert dealer rotates 0,1,2,3."""
+    """Inject all-empty hands so every round fails; assert dealer rotates 0,1,2,3.
+
+    RUL-56: ``shop_pool`` overridden to empty so the SHOP cadence (round 3)
+    skips and the test exercises only the dealer-no-seed rotation path.
+    """
     state = start_game()
+    state = state.model_copy(update={"shop_pool": ()})
     for seat in range(PLAYER_COUNT):
         state = _override_player_hand(state, seat, ())
     seen_dealers: list[int] = []

@@ -21,7 +21,7 @@ any state passing through; they only observe.
 This pattern is testing-only and reversible. No production module is
 modified by this ticket (RUL-35 hard constraint).
 
-## Empirical baseline (deterministic main post-RUL-61)
+## Empirical baseline (deterministic main post-RUL-56)
 
 Seeds 0..9 at ``rounds=200``:
 
@@ -34,15 +34,18 @@ Seeds 0..9 at ``rounds=200``:
 | goal-claim VP awarded (sweep total)           | ≥1       | 1     |
 | effect chip-delta (sweep total)               | ≥1       | 1     |
 
-Winners under the RUL-55 PLAY_BIAS=0.75 heuristic post-RUL-61: seeds
-0/1/3/5/7/9. Cap-hit: seeds 2/4/6/8. The earlier 7/10 baseline (seeds
-0/1/3/4/5/7/9) was achieved with the M2 status vocabulary half-wired —
-MARKED + CHAINED-clear were absent from production. RUL-61 lit those
-effect cards, shifting effect-deck depth 12 → 14 and pushing the recycle
-threshold past round 13; seed 4 flipped to cap-hit under the new pop
-sequence. Below 6/10 fires the next polish ticket; the gap between random
-bots and the full status vocabulary is exactly the kind of evidence M4
-ISMCTS (ADR-0006) will address.
+Winners under the RUL-55 PLAY_BIAS=0.75 heuristic with the RUL-56 SHOP
+content (price gradient 10/12/11/11/11/11/12) active: seeds 0/1/3/5/7/9.
+Cap-hit: seeds 2/4/6/8. Identical winner set to the pre-SHOP RUL-61
+baseline — the RUL-56 price tuning keeps the SHOP transparent to winner
+emergence at the random-bot tier (offers priced 10-12 are rarely
+affordable to bots in rounds 3 / 6 after BURN + discard drain, so the
+substrate exercises but does not divert enough chips to flip seeds).
+Per-seed lifecycle counts shift vs the pre-SHOP baseline because the
+seeded shop-pool shuffle perturbs the seed-0 dealing slightly, but
+aggregate floors hold by orders of magnitude. Below 6/10 fires the next
+polish ticket; the gap between random bots and the full status vocabulary
+is exactly the kind of evidence M4 ISMCTS (ADR-0006) will address.
 
 Lifecycle-coverage floors are pinned at 1 (sweep-aggregate) by design — the
 DoD asks for "at least one … across sweep". The observed counts are orders
@@ -69,14 +72,11 @@ from rulso.state import RuleKind
 _SEEDS: tuple[int, ...] = tuple(range(10))
 _ROUNDS = 200
 
-# RUL-61 lowered the floor from 7 → 6. The earlier 7/10 baseline was
-# achieved with MARKED + CHAINED-clear absent from production (RUL-55's
-# PLAY_BIAS=0.75 tune ran against a half-wired vocabulary). Once RUL-61
-# lit those effect cards, baseline dropped to 6/10 — seed 4 flipped to
-# cap-hit under the deeper effect deck. This is real signal that random
-# bots are weaker against the full M2 status vocabulary; M4 ISMCTS
-# (ADR-0006) is the next move. Set at the observed count with no slack —
-# below 6 is the next polish trigger.
+# RUL-61 lowered the floor from 7 → 6. RUL-56 confirmed 6/10 holds under
+# the active SHOP content with the locked price gradient
+# (10/12/11/11/11/11/12) — the SHOP substrate exercises every cadence
+# round (3, 6, …) without diverting enough chips to flip the seed-0
+# winner. Below 6 is the next polish trigger.
 _MIN_WINNERS = 6
 # Observed 10/10 in the baseline probe; 0.8 margin absorbs minor variance.
 _MIN_RUNS_WITH_RESOLVE = 8
@@ -205,14 +205,13 @@ def test_each_seed_reaches_resolve(seed: int, sweep) -> None:
 def test_winners_emerge_across_the_sweep(sweep) -> None:
     """Reclaim the M1.5 watchable bar deferred by RUL-34 during Phase 3.
 
-    Pinned at 6/10 — the deterministic post-RUL-61 baseline. The earlier
-    7/10 floor was an artifact of a half-wired vocabulary (MARKED +
-    CHAINED-clear absent in production at RUL-55's PLAY_BIAS=0.75 tune).
-    With the full M2 status vocabulary live (RUL-60 narrowed MARKED's
-    EACH_PLAYER consumer; RUL-61 lit APPLY_MARKED + CLEAR_CHAINED cards)
-    the deterministic baseline is 6/10. Below 6 means the bot heuristic
-    regressed; the gap between random bots and the full vocabulary is
-    what M4 ISMCTS (ADR-0006) addresses.
+    Pinned at 6/10 — the deterministic post-RUL-56 baseline (identical
+    winner set to post-RUL-61: seeds 0/1/3/5/7/9). RUL-56 added the M2.5
+    SHOP starter content; the locked price gradient 10/12/11/11/11/11/12
+    keeps SHOP transparent to winner emergence at the random-bot tier.
+    Below 6 means the bot heuristic, deck, or SHOP price band regressed;
+    the gap between random bots and the full vocabulary is what M4 ISMCTS
+    (ADR-0006) addresses.
     """
     winners = sum(1 for seed in _SEEDS if _is_winner(sweep[seed]["stdout"]))
     assert winners >= _MIN_WINNERS, (
