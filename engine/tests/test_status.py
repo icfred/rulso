@@ -268,6 +268,34 @@ def test_dispatch_clear_chained_resets_toggle() -> None:
     assert out.players[0].status.chained is False
 
 
+def test_dispatch_yaml_loaded_marked_apply_card_end_to_end() -> None:
+    """The yaml-loaded ``eff.marked.apply`` card dispatches MARKED on its target.
+
+    Pulls the card from :func:`rulso.cards.load_effect_cards` rather than
+    hand-building it, proving the cards.yaml → dispatcher round-trip works
+    for the RUL-61 additions.
+    """
+    from rulso.cards import load_effect_cards
+
+    by_id = {c.id: c for c in load_effect_cards()}
+    revealed = by_id["eff.marked.apply"]
+    state = _state_with(_player("p0"), _player("p1", seat=1), revealed=revealed)
+    out = dispatch_effect(state, state.revealed_effect, frozenset({"p0"}))
+    assert out.players[0].status.marked is True
+    assert out.players[1].status.marked is False
+
+
+def test_dispatch_yaml_loaded_chained_clear_card_end_to_end() -> None:
+    """The yaml-loaded ``eff.chained.clear`` card dispatches CHAINED removal."""
+    from rulso.cards import load_effect_cards
+
+    by_id = {c.id: c for c in load_effect_cards()}
+    revealed = by_id["eff.chained.clear"]
+    state = _state_with(_player("p0", chained=True), revealed=revealed)
+    out = dispatch_effect(state, state.revealed_effect, frozenset({"p0"}))
+    assert out.players[0].status.chained is False
+
+
 def test_dispatch_apply_burn_with_target_modifier_inverts_scope() -> None:
     """``@EXCEPT_MATCHED`` rewrites the target set before the handler runs."""
     state = _state_with(
