@@ -41,6 +41,8 @@ from rulso.state import (
 
 _DEFAULT_ROUNDS: int = 50
 _DEFAULT_SEED: int = 0
+_DEFAULT_WS_HOST: str = "127.0.0.1"
+_DEFAULT_WS_PORT: int = 8765
 
 # RUL-42 (G): OP-only comparator names per ADR-0002. CLI is the seat with the
 # rng for the dice roll; rules.play_card stamps last_roll using the value we
@@ -49,8 +51,18 @@ _OP_ONLY_COMPARATOR_NAMES: frozenset[str] = frozenset({"LT", "LE", "GT", "GE", "
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Entry point. Parses args, runs one game, returns the exit code."""
+    """Entry point. Parses args, runs one game, returns the exit code.
+
+    With ``--ws`` the CLI does NOT run a game in-process — it connects to a
+    running ``rulso-server`` and drives the human seat via TTY. See
+    :mod:`rulso.cli_ws`. The other flags (``--seed``, ``--rounds``,
+    ``--human-seat``) are ignored in WS mode; the server owns those concerns.
+    """
     args = _parse_args(argv)
+    if args.ws:
+        from rulso.cli_ws import main_ws
+
+        return main_ws(host=args.ws_host, port=args.ws_port)
     return run_game(
         seed=args.seed,
         max_rounds=args.rounds,
@@ -180,6 +192,26 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
             "Drive the given seat from the terminal; other seats remain random "
             "bots. Omit to play a four-bot game (default)."
         ),
+    )
+    parser.add_argument(
+        "--ws",
+        action="store_true",
+        help=(
+            "Connect to a running rulso-server over WebSocket and drive the "
+            "human seat via TTY instead of running a game in-process. The "
+            "server owns --seed / --human-seat in this mode."
+        ),
+    )
+    parser.add_argument(
+        "--ws-host",
+        default=_DEFAULT_WS_HOST,
+        help=f"Server host when --ws is set (default: {_DEFAULT_WS_HOST})",
+    )
+    parser.add_argument(
+        "--ws-port",
+        type=int,
+        default=_DEFAULT_WS_PORT,
+        help=f"Server port when --ws is set (default: {_DEFAULT_WS_PORT})",
     )
     return parser.parse_args(argv)
 
