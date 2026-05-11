@@ -1,4 +1,4 @@
-_Last edited: 2026-05-11 by RUL-23 (post-RUL-69: decision-support panels live — rule preview, goals, opponents; action button labels expanded via `renderCard`)_
+_Last edited: 2026-05-11 by RUL-23 (post-RUL-70: client renderer reads `state.labels` directly from the wire — local ADR-0001 recompute deleted; drift risk closed)_
 
 # client
 
@@ -18,7 +18,7 @@ TypeScript + Vite + PixiJS v8 browser app. Receives engine state over WebSocket,
 | `client/src/render/cards.ts` | live | `renderCard(card)` (RUL-69): handles every `CardType` — SUBJECT (label name + `p0..p3` → "Player 0..3" absolute), QUANT (operator + N), NOUN (read description), MODIFIER (operator + magnitude), JOKER (variant), EFFECT (action verb). Mirrors `engine/src/rulso/grammar.py` semantics |
 | `client/src/render/rule.ts` | live | `renderActiveRule(state)` (RUL-69): one-line preview of the active rule's slot fill state — empty slots show `[<TYPE>: ?]`; lifetime prefix when fully filled; JOKER appended via `renderCard` |
 | `client/src/render/goals.ts` | live | `renderGoals(state)` (RUL-69): one human-readable line per `state.active_goals`. Uses a hand-rolled `claim_condition → prose` lookup since the engine doesn't serialise rendered text — small + stable, per ADR-0001 / hand-over allowance |
-| `client/src/render/opponents.ts` | live | `renderOpponents(state, human_seat)` (RUL-69): per non-human seat, "Player N — chips, VP, status: BURN(2), MUTE …" plus dormant-label suffixes. Floating labels (LEADER/WOUNDED/GENEROUS/CURSED) recomputed client-side per ADR-0001 because the engine doesn't serialise them — **drift risk flagged as a follow-up substrate ticket** |
+| `client/src/render/opponents.ts` | live | `renderOpponents(state, human_seat)` (RUL-69): per non-human seat, "Player N — chips, VP, status: BURN(2), MUTE …" plus dormant-label suffixes. RUL-70 closed the ADR-0001 drift risk — floating labels (LEADER/WOUNDED/GENEROUS/CURSED) read directly from `state.labels` (engine-published wire field); local recompute deleted. MARKED/CHAINED still derived from `player.status` (status tokens, not labels) |
 | `client/src/types/generated.ts` | live | regenerated from `engine/src/rulso/protocol.py` by `scripts/regenerate-types.sh`; emits every `BaseModel` reachable from `protocol.py` (`Hello` / `StateBroadcast` / `ErrorEnvelope` / `ActionSubmit` + the `GameState` transitive closure + action shapes from `legality.py`). Idempotent: byte-identical re-runs |
 | `client/src/types/envelopes.ts` | live | hand-curated unions over the generated interfaces (`ServerEnvelope` / `ClientAction` / `ClientEnvelope`); pydantic2ts does not surface the `Annotated[Union[...], Field(discriminator=...)]` aliases since they're `TypeAdapter` aliases (not `BaseModel` subclasses) |
 
@@ -68,8 +68,8 @@ Expected: status badge shows `connecting` → `connected`; first `<pre>` block i
 
 Caveats:
 
-- Floating labels (LEADER / WOUNDED / GENEROUS / CURSED) are recomputed client-side per ADR-0001 — the engine doesn't currently serialise them. Drift risk: any future ADR-0001 amendment must update both engine and client. Follow-up substrate ticket open to publish labels on the wire.
 - Pixi rendering / scenes / Aegean palette / animations / sound — all M5.
+- `npm run lint` from inside `client/` is broken (script runs `biome check src` from `client/` but the repo-root `biome.json` `include` patterns are `client/**/*.ts`). Pre-commit hook drives biome correctly via per-file paths, and `biome check client` from repo root works. Follow-up to fix the script wrapper.
 
 ## Conventions
 

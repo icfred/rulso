@@ -1,4 +1,4 @@
-_Last updated: 2026-05-11 by orchestrator session — **M3 PARALLEL FAN MERGED**: RUL-68 (real `DiscardRedraw` engine substrate + CLI/server wire-through, retiring the M2-era `discard_redraw_unimplemented` placeholder) shipped via PR #72; RUL-69 (client decision-support — `renderCard` + rule preview + goals + opponents panels, action labels expanded from JSON to text) shipped via PR #73. Both PRs disjoint surfaces (engine vs client), CLEAN against each other regardless of merge order. Engine **527 tests passing** (513 + 14 new in `test_discard.py` + extended `test_server.py`); ruff clean; client typecheck/lint/build clean. M2 watchable smoke 6/10 floor preserved despite real discards now perturbing intermediate state. **One follow-up surfaced**: floating labels (LEADER/WOUNDED/GENEROUS/CURSED) recomputed client-side per ADR-0001 — engine doesn't serialise them, so client port is a drift risk. Next dispatchable: parallel fan of (a) labels-on-wire substrate + (b) `bots/human` TTY rewire through WS (final M3 functional sub-issue per RUL-64)._
+_Last updated: 2026-05-11 by orchestrator session — **M3 FUNCTIONALLY COMPLETE**: RUL-70 (labels-on-wire substrate — `GameState.labels` published canonically; client renderer reads directly; ADR-0001 drift closed) shipped via PR #75; RUL-71 (`rulso --ws` CLI client — single canonical input transport for browser AND CLI) shipped via PR #74. Both PRs disjoint surfaces, merged in sequence with rebase + post-merge test pass on RUL-71 (per the 2026-05-10 cascade lesson — CLEAN ≠ behaviour-correct). Engine **541 + 8 = 549 tests passing**; ruff clean; client typecheck/build clean. M2 watchable smoke 26/26 (well above 6/10 floor). **M3 milestone (RUL-58) closes**: full substrate + browser playability + CLI parity + label drift closed, all 9 sub-issues shipped (RUL-63/64/66/67/68/69/70/71 + RUL-65 supporting refactor). Next milestone: **M4 ISMCTS (RUL-59)** — payoff design now has playtest signal as input per ADR-0006._
 
 # Rulso — orchestrator bootstrap
 
@@ -14,8 +14,8 @@ Linear board: https://linear.app/rulso (team `RUL`, projects: Engine / Infra / B
 | RUL-15 | M1.5: Watchable engine | First moment the game is *real* | **Done** (closed 2026-05-10) |
 | RUL-24 | M2: Full card set | Every card type and mechanic from cards.yaml works | **Done** (closed 2026-05-10) — gap-close set tracked as M2.5 below. |
 | _(no parent)_ | **M2.5: Mechanic gaps** (pre-M3 sweep) | Close M2 mechanics that ship in code but not in play | **Done** (closed 2026-05-11) — RUL-57/60/62 in batch 1 + RUL-61/56 in batch 2. All 5 shipped; M2.5 follow-ups under RUL-24 cleared. |
-| RUL-58 | **M3: Foundation/Minimal Client** | Human can read the board, make a meaningful decision, reach a winner | **In Progress (opened 2026-05-11)** — Substrate complete (RUL-63 envelope, RUL-64 server, RUL-66 client bootstrap, RUL-67 input loop, RUL-68 discard substrate, RUL-69 decision-support panels). Browser is fully playable: reads the board (rule preview + goals + opponents), makes a meaningful decision (text-labelled action buttons), reaches a winner (terminal `StateBroadcast` rendered cleanly). Next dispatchable: parallel fan of (a) labels-on-wire substrate (close ADR-0001 drift risk) + (b) `bots/human` TTY rewire through WS (final M3 functional). |
-| RUL-59 | **M4: Smart bot (ISMCTS)** | ISMCTS surfaces real design feedback in solo play | **Backlog** — blocked-by RUL-58; payoff design draws on M3 playtest signal. |
+| RUL-58 | **M3: Foundation/Minimal Client** | Human can read the board, make a meaningful decision, reach a winner | **Done (closed 2026-05-11)** — Full substrate + browser playability + CLI parity + ADR-0001 drift closed: RUL-63 envelope, RUL-64 server, RUL-66 client bootstrap, RUL-67 input loop, RUL-68 discard substrate, RUL-69 decision-support panels, RUL-70 labels-on-wire, RUL-71 CLI `--ws`. RUL-65 supporting refactor (`legality.py` action-surface promotion). |
+| RUL-59 | **M4: Smart bot (ISMCTS)** | ISMCTS surfaces real design feedback in solo play | **Unblocked (RUL-58 Done)** — ready to scope. Payoff design now has playtest signal as input per ADR-0006. |
 | RUL-23 | Meta — orchestrator-authored cross-cutting commits | Permanent home for orchestrator commits | Permanent In Progress |
 
 ## Milestone reorder — ADR-0006 (2026-05-10)
@@ -32,7 +32,41 @@ Foundation Client DoD bar is "ugly but playable": engine WS protocol + server, c
 
 ## In flight
 
-**Nothing in flight.** RUL-58 M3 substrate + browser-playability fully shipped (RUL-63 / RUL-64 / RUL-66 / RUL-67 / RUL-68 / RUL-69). Browser at `:5173` reads the table (rule preview, goals face-up, opponents' chips/VP/status), submits text-labelled action buttons, drives the game to END. Next dispatchable: **parallel fan** of two sub-issues — (a) labels-on-wire substrate (close the RUL-69 ADR-0001 drift risk); (b) `bots/human` TTY rewire through WS (final M3 functional — same human-seat surface drives both browser and CLI). Touch surfaces disjoint (engine vs cli/client); true parallel-safe.
+**Nothing in flight. M3 closed.** RUL-58 fully shipped (9 sub-issues across the M3 fan). Single canonical input transport for human play across browser AND CLI; engine state published canonically including the floating-label registry; decision-support text rendered. Browser at `:5173` plays through to END; CLI at `rulso --ws --human-seat 0` connects to `rulso-server` and plays the same loop via TTY. Next milestone: **M4 ISMCTS (RUL-59)** — backlog parent already exists; ready to scope. Per ADR-0006, payoff design now draws on M3 playtest signal as input. Recommend the user actually playtest a few games via `rulso-server` + browser before opening the M4 scoping ticket.
+
+### RUL-70 + RUL-71 ship summary (2026-05-11, PRs #75 / #74)
+
+| Ticket | PR | Notes |
+|---|---|---|
+| RUL-70 | #75 | `GameState.labels: dict[str, tuple[str, ...]]` additive (default empty); `labels.to_wire(labels_map)` adapter (frozenset → id-sorted tuple = deterministic JSON); `_with_recomputed_labels(state)` helper threaded through `start_game`, `enter_round_start` (both exits), `enter_resolve` (both exits), `pass_turn`, `apply_shop_purchase`, `discard_redraw`. `GameState` becomes unhashable (no consumer relied on it; grep verified). Removed dead `recompute_labels(...)` call in `enter_round_start` step 3 — the helper at the return path satisfies the design step 3 hook canonically. Client `render/opponents.ts` reads `state.labels` directly; local recompute deleted. Worker showed byte-identical OLD/NEW renderer output on seed-0 + a varied tie-break sample. 14 new label tests + 3 state-models tests + 1 protocol round-trip extension. PROTOCOL_VERSION unchanged. M2 watchable 26/26 (well above 6/10 floor). |
+| RUL-71 | #74 | New `cli_ws.py` (224 lines) + `cli.py:--ws/--ws-host/--ws-port` flags. Thin shim — connects to `rulso-server`, parses `Hello`, prints `StateBroadcast` events, prompts on `legal_actions` via `bots/human._describe_action` (cross-module private import — accepted per stop-condition option (b)), submits `ActionSubmit`, renders terminal state and exits cleanly. New `test_cli_ws.py` (8 tests covering handshake, bot-only-progress observer, action submission round-trip via TextIO injection, end-to-end completion). 8/8 green pre- and post-rebase onto RUL-70. |
+
+**Merge sequence**: RUL-70 merged first (substrate change). RUL-71's branch was pre-RUL-70 base; rebased onto post-RUL-70 main; tests re-run (8/8 green); force-pushed; merged. CLEAN merge mechanics held throughout, but the test re-run was the safety check per the 2026-05-10 behavioural-substrate cascade lesson — verified label additions don't shift the deterministic baseline RUL-71's end-to-end test relies on (label recompute is pure-read; no rng consumption shift).
+
+**Worker hand-back flags addressed**:
+
+- RUL-70: `npm run lint` from `client/` is broken (script runs `biome check src` from `client/` but the repo-root `biome.json` `include` patterns are `client/**/*.ts`). Pre-commit hook drives biome correctly via per-file paths; `biome check client` from repo root works. Worker substituted `biome check client` for the broken `npm run lint` in DoD verification — correct call. **Filing as a follow-up** (low priority — fix the package.json script).
+- RUL-70: `GameState` becomes unhashable post-additive-dict-field. Worker grep-verified no consumer relied on hashability; clean. No follow-up.
+- RUL-70: dead `recompute_labels(...)` call in `enter_round_start` step 3 removed (the helper at the return path satisfies the design hook canonically). Documented inline. No follow-up.
+- RUL-71: imports private `_describe_action` from `rulso.bots.human` verbatim. Per the stop-condition options, this is option (b) — duplicate prompt logic / accept cross-module use. No follow-up unless the helper extraction becomes worth the refactor (filed as a low-priority candidate alongside `_OP_ONLY_COMPARATOR_NAMES`).
+- RUL-71: `--ws-host`/`--ws-port` chosen over `--ws-server-url` (no existing `--port` flag collision; defaults match server defaults). Worker's call. Accepted.
+- RUL-71: end-to-end test plays seed 0; if the deterministic baseline shifts under future tickets, the test will need a new seed or wider timeout. Documented in the test file inline. No follow-up.
+
+**Cross-cutting fixes landed via this RUL-23 sweep**:
+
+- `docs/engine/readme.md`: `state.py` row notes `labels` field; `labels.py` row notes `to_wire` adapter; `rules.py` row notes `_with_recomputed_labels` helper threaded through six mutation sites; `cli.py` row notes `--ws` flag dispatch; new rows for `cli_ws.py` + `test_cli_ws.py`; `_Last edited:` bumped
+- `docs/client/readme.md`: `opponents.ts` row notes the local-recompute deletion + wire-driven labels; the floating-labels drift caveat removed (closed); `_Last edited:` bumped; new caveat added for the broken `npm run lint` script
+- STATUS.md re-anchored to **M3 CLOSED** (this entry)
+- M3 milestone (RUL-58) marked Done
+
+### Open follow-ups post-M3
+
+- **`_OP_ONLY_COMPARATOR_NAMES` duplication** between `cli.py` and `server.py` — promote to `legality.py` or `effects.py`. Low priority parallel-safe one-PR refactor; not blocking
+- **TS type-gen `state.py` coverage** — extend `scripts/regenerate-types.sh` to introspect `rulso.state` directly if M4 ISMCTS rendering needs richer state types beyond `StateBroadcast.state` transitive closure; not a blocker
+- **`npm run lint` cwd-config quirk** — `client/package.json`'s `lint` script needs adjusting so it works from `client/`. Pre-commit hook + repo-root `biome check client` already correct. Trivial follow-up
+- **`bots/human._describe_action` cross-module private import** (RUL-71) — extract a shared `_render_legal_set` / `_read_choice` helper if/when a third consumer arrives; for now the duplicate-it-in-cli_ws stance per RUL-71 stop condition (b) holds
+- **Seat-relative SUBJECT rendering** ("You" / "Opponent N" instead of "Player 0..3") — UX polish; defer to playtest signal
+- **M4 scoping ticket (RUL-59 sub-issues)** — open after the user playtests a few rounds via `rulso-server` to inform ISMCTS payoff design
 
 ### RUL-68 + RUL-69 ship summary (2026-05-11, PRs #72 / #73)
 
