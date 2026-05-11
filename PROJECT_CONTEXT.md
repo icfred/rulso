@@ -11,6 +11,7 @@ Read after `CLAUDE.md` (auto-loads) and before any project work. Promote inline 
 - [ADR-0004](docs/decisions/ADR-0004-operator-modifier-grammar.md) — Operator MODIFIERs (BUT/AND/OR/MORE_THAN/AT_LEAST) fold into `Slot.modifiers` left-to-right; AND/OR on SUBJECT = set union; MORE_THAN/AT_LEAST flip QUANT strictness.
 - [ADR-0005](docs/decisions/ADR-0005-goalcard-typing.md) — `GameState.goal_deck` / `goal_discard` / `active_goals` retype from `Card` to `GoalCard` (substrate narrowing; placeholder fields RUL-26 introduced for M2).
 - [ADR-0006](docs/decisions/ADR-0006-foundation-client-before-ismcts.md) — Foundation/Minimal Client lands as M3 (was M4); ISMCTS becomes M4 (was M3). CLI human-seat decision-support gap blocks playtest signal regardless of bot strength; rendering primitives needed for the client are duplicated work if built into the CLI.
+- [ADR-0007](docs/decisions/ADR-0007-shop-payload-semantics.md) — SHOP payloads are `Card` instances delivered to `Player.hand` via the existing `_ShopEntry.payload_type` route (card-buy semantics). Locks shape 2 from the three RUL-62 candidates; M2.5 starter is 7 offers (2 SUBJECT / 2 MODIFIER / 3 JOKER) on the data-only path.
 
 ## Critical context
 
