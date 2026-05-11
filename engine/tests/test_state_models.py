@@ -155,3 +155,35 @@ def test_model_copy_update_pattern() -> None:
     assert g.round_number == 0
     assert advanced.round_number == 1
     assert advanced.phase is Phase.BUILD
+
+
+# --- RUL-70: GameState.labels field round-trip ------------------------------
+
+
+def test_gamestate_labels_field_default_is_empty_dict() -> None:
+    g = GameState()
+    assert g.labels == {}
+
+
+def test_gamestate_labels_round_trip_json() -> None:
+    """Wire shape ``dict[str, tuple[str, ...]]`` survives JSON round-trip."""
+    g = GameState(
+        labels={
+            "THE LEADER": ("p0", "p1"),
+            "THE WOUNDED": ("p2",),
+            "THE GENEROUS": (),
+            "THE CURSED": (),
+            "THE MARKED": (),
+            "THE CHAINED": (),
+        },
+    )
+    restored = GameState.model_validate_json(g.model_dump_json())
+    assert restored == g
+    assert restored.labels["THE LEADER"] == ("p0", "p1")
+    assert isinstance(restored.labels["THE LEADER"], tuple)
+
+
+def test_gamestate_labels_serialises_as_json_object_of_arrays() -> None:
+    g = GameState(labels={"THE LEADER": ("p0",)})
+    raw = g.model_dump_json()
+    assert '"labels":{"THE LEADER":["p0"]}' in raw

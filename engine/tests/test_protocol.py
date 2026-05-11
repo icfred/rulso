@@ -58,6 +58,22 @@ def test_state_broadcast_round_trip_with_real_game_state() -> None:
     assert parsed.state == state
     # Default ``legal_actions`` is None for bot-active / non-BUILD broadcasts.
     assert parsed.legal_actions is None
+    # RUL-70: state.labels is published on the wire; ``start_game`` seeds it.
+    assert "THE LEADER" in parsed.state.labels
+    assert parsed.state.labels == state.labels
+
+
+def test_state_broadcast_labels_round_trip_wire_shape() -> None:
+    """``GameState.labels`` round-trips as ``{label: [player_id, ...]}`` JSON."""
+    state = start_game(0)
+    msg = StateBroadcast(state=state)
+    raw = msg.model_dump_json()
+    # All four 4-player p0..p3 tie at vp=0 / chips=50 in the opening state —
+    # LEADER and WOUNDED hold every id (ADR-0001 ties → all). Sorted ascending.
+    assert '"THE LEADER":["p0","p1","p2","p3"]' in raw
+    assert '"THE WOUNDED":["p0","p1","p2","p3"]' in raw
+    assert '"THE GENEROUS":[]' in raw
+    assert '"THE CURSED":[]' in raw
 
 
 def test_state_broadcast_round_trip_with_legal_actions() -> None:

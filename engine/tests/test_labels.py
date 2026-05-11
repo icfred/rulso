@@ -1,4 +1,4 @@
-"""Tests for labels.recompute_labels (RUL-19, extended by RUL-33)."""
+"""Tests for labels.recompute_labels (RUL-19, extended by RUL-33, wire shape RUL-70)."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from rulso.labels import (
     MARKED,
     WOUNDED,
     recompute_labels,
+    to_wire,
 )
 from rulso.state import GameState, Player, PlayerHistory, PlayerStatus
 
@@ -201,3 +202,104 @@ def test_pure_function_does_not_mutate_state() -> None:
     snapshot = state.model_copy()
     recompute_labels(state)
     assert state == snapshot
+
+
+# --- RUL-70: wire-shape (to_wire) -------------------------------------------
+
+
+def test_to_wire_returns_dict_of_sorted_tuples() -> None:
+    """``to_wire`` converts frozensets to id-sorted tuples on every label."""
+    state = _state(
+        _player("p2", vp=2, chips=10),
+        _player("p0", vp=2, chips=30),
+        _player("p1", vp=1, chips=20),
+    )
+    wire = to_wire(recompute_labels(state))
+    assert isinstance(wire, dict)
+    for name in LABEL_NAMES:
+        assert isinstance(wire[name], tuple)
+    assert wire[LEADER] == ("p0", "p2")
+    assert wire[WOUNDED] == ("p2",)
+
+
+def test_to_wire_tied_leaders_sorted() -> None:
+    """Tie-break (ADR-0001): ties → all tied players; ids sorted ascending."""
+    state = _state(
+        _player("p2", vp=2),
+        _player("p0", vp=2),
+        _player("p1", vp=2),
+    )
+    wire = to_wire(recompute_labels(state))
+    assert wire[LEADER] == ("p0", "p1", "p2")
+
+
+def test_to_wire_tied_wounded_sorted() -> None:
+    state = _state(
+        _player("p1", chips=5),
+        _player("p0", chips=5),
+        _player("p2", chips=20),
+    )
+    wire = to_wire(recompute_labels(state))
+    assert wire[WOUNDED] == ("p0", "p1")
+
+
+def test_to_wire_generous_zero_population_is_empty_tuple() -> None:
+    """ADR-0001: GENEROUS zero → empty (no card has been given)."""
+    state = _state(_player("p0"), _player("p1"))
+    wire = to_wire(recompute_labels(state))
+    assert wire[GENEROUS] == ()
+
+
+def test_to_wire_generous_tied_positive_sorted() -> None:
+    state = _state(
+        _player("p2", cards_given=3),
+        _player("p0", cards_given=3),
+        _player("p1", cards_given=1),
+    )
+    wire = to_wire(recompute_labels(state))
+    assert wire[GENEROUS] == ("p0", "p2")
+
+
+def test_to_wire_cursed_zero_population_is_empty_tuple() -> None:
+    """ADR-0001: CURSED zero → empty (no player has been burned)."""
+    state = _state(_player("p0"), _player("p1"))
+    wire = to_wire(recompute_labels(state))
+    assert wire[CURSED] == ()
+
+
+def test_to_wire_cursed_tied_positive_sorted() -> None:
+    state = _state(
+        _player("p1", burn=3),
+        _player("p0", burn=3),
+        _player("p2", burn=1),
+    )
+    wire = to_wire(recompute_labels(state))
+    assert wire[CURSED] == ("p0", "p1")
+
+
+def test_to_wire_marked_chained_empty_until_m2_status_apply() -> None:
+    state = _state(_player("p0", vp=1, chips=5, burn=2, cards_given=3))
+    wire = to_wire(recompute_labels(state))
+    assert wire[MARKED] == ()
+    assert wire[CHAINED] == ()
+
+
+def test_to_wire_empty_player_set_yields_empty_tuples() -> None:
+    wire = to_wire(recompute_labels(GameState()))
+    for name in LABEL_NAMES:
+        assert wire[name] == ()
+
+
+def test_to_wire_is_deterministic_across_runs() -> None:
+    """Sorted ids → JSON is byte-stable even though frozenset iteration isn't."""
+    state = _state(
+        _player("p2", vp=1, chips=20),
+        _player("p0", vp=1, chips=20),
+        _player("p1", vp=1, chips=20),
+    )
+    a = to_wire(recompute_labels(state))
+    b = to_wire(recompute_labels(state))
+    assert a == b
+    # Hand-coded expected — pins the sorted-asc invariant.
+    assert a[LEADER] == ("p0", "p1", "p2")
+    assert a[WOUNDED] == ("p0", "p1", "p2")
