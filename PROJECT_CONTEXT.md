@@ -12,6 +12,7 @@ Read after `CLAUDE.md` (auto-loads) and before any project work. Promote inline 
 - [ADR-0005](docs/decisions/ADR-0005-goalcard-typing.md) — `GameState.goal_deck` / `goal_discard` / `active_goals` retype from `Card` to `GoalCard` (substrate narrowing; placeholder fields RUL-26 introduced for M2).
 - [ADR-0006](docs/decisions/ADR-0006-foundation-client-before-ismcts.md) — Foundation/Minimal Client lands as M3 (was M4); ISMCTS becomes M4 (was M3). CLI human-seat decision-support gap blocks playtest signal regardless of bot strength; rendering primitives needed for the client are duplicated work if built into the CLI.
 - [ADR-0007](docs/decisions/ADR-0007-shop-payload-semantics.md) — SHOP payloads are `Card` instances delivered to `Player.hand` via the existing `_ShopEntry.payload_type` route (card-buy semantics). Locks shape 2 from the three RUL-62 candidates; M2.5 starter is 7 offers (2 SUBJECT / 2 MODIFIER / 3 JOKER) on the data-only path.
+- [ADR-0008](docs/decisions/ADR-0008-ws-protocol-envelope.md) — WebSocket protocol envelope shape (M3 substrate). Server→client `Hello` / `StateBroadcast` / `ErrorEnvelope` (tagged on `type`); client→server `ActionSubmit` wraps `PlayCard | PlayJoker | DiscardRedraw` imported verbatim from `bots.random` (tagged on `kind`). MVP cadence is full state on every transition (diff is a future additive variant). `Pass` is server-side-only. `PROTOCOL_VERSION=1`.
 
 ## Critical context
 

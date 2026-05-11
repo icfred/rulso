@@ -1,4 +1,4 @@
-_Last updated: 2026-05-11 by orchestrator session — **M2.5 CLOSED**: RUL-57 (PR #59), RUL-60 (PR #60), RUL-62 (PR #61), RUL-61 (PR #63), RUL-56 (PR #64) — all 5 shipped. Main at **479 tests passing**, ruff clean, deterministic M2 watchable smoke at **6/10 winners** (seeds 0/1/3/5/7/9) with full M2 status vocabulary + active SHOP content. MARKED applies + narrows EACH_PLAYER scope; CHAINED can be cleared; SHOP fires at 10/12/11/11/11/11/12 price gradient. Next gate: **M3 Foundation/Minimal Client** (RUL-58) — substrate-spike-first per ADR-0006._
+_Last updated: 2026-05-11 by orchestrator session — **M3 SUBSTRATE LOCKED**: RUL-63 (WS protocol envelope shape) shipped via PR #66 — ADR-0008 ratifies envelope structure + MVP broadcast cadence + structured action-submit shape (Pydantic action models imported verbatim from `bots.random`, no drift possible). Main at **499 tests passing** (479 + 20 new), ruff clean. Backlog sweep this session: RUL-22 → Done; RUL-36/37/38 → Duplicate of RUL-39/40/41. Next dispatch: engine-server sub-issue (asyncio loop, connection management, broadcast-on-transition) — file + emit hand-over._
 
 # Rulso — orchestrator bootstrap
 
@@ -14,7 +14,7 @@ Linear board: https://linear.app/rulso (team `RUL`, projects: Engine / Infra / B
 | RUL-15 | M1.5: Watchable engine | First moment the game is *real* | **Done** (closed 2026-05-10) |
 | RUL-24 | M2: Full card set | Every card type and mechanic from cards.yaml works | **Done** (closed 2026-05-10) — gap-close set tracked as M2.5 below. |
 | _(no parent)_ | **M2.5: Mechanic gaps** (pre-M3 sweep) | Close M2 mechanics that ship in code but not in play | **Done** (closed 2026-05-11) — RUL-57/60/62 in batch 1 + RUL-61/56 in batch 2. All 5 shipped; M2.5 follow-ups under RUL-24 cleared. |
-| RUL-58 | **M3: Foundation/Minimal Client** | Human can read the board, make a meaningful decision, reach a winner | **Backlog (next gate)** — Substrate-spike-first per ADR-0006. WS protocol shape spike opens M3. |
+| RUL-58 | **M3: Foundation/Minimal Client** | Human can read the board, make a meaningful decision, reach a winner | **In Progress (opened 2026-05-11)** — Substrate locked via ADR-0008 (RUL-63, PR #66). Next dispatchable sub-issue: engine server loop. |
 | RUL-59 | **M4: Smart bot (ISMCTS)** | ISMCTS surfaces real design feedback in solo play | **Backlog** — blocked-by RUL-58; payoff design draws on M3 playtest signal. |
 | RUL-23 | Meta — orchestrator-authored cross-cutting commits | Permanent home for orchestrator commits | Permanent In Progress |
 
@@ -32,7 +32,50 @@ Foundation Client DoD bar is "ugly but playable": engine WS protocol + server, c
 
 ## In flight
 
-**Nothing in flight. M2.5 is closed.**
+**M3 substrate locked (2026-05-11, PR #66).** RUL-58 In Progress. Next dispatchable sub-issue: engine server loop (asyncio + `websockets`, broadcast on `GameState` transition). Filing as a new sub-issue + emitting hand-over on this turn.
+
+### RUL-63 ship summary (2026-05-11, PR #66)
+
+| Decision | Locked | Rationale |
+|---|---|---|
+| Envelope structure | Server→client `Hello` / `StateBroadcast` / `ErrorEnvelope` tagged on `type`; client→server `ActionSubmit` tagged on `type`, inner action tagged on `kind` (existing engine convention — no namespace collision) | One ADR (ADR-0008). Cadence is a direct consequence of envelope shape under MVP. |
+| Broadcast cadence (MVP) | Full `StateBroadcast` on every `GameState` mutation. No diff. | `tech.md` informal hint promoted to ratified shape; coalescing/diff get a future ADR if and when they land. |
+| Action-submit shape | (b) Structured. `ClientAction = PlayCard \| PlayJoker \| DiscardRedraw`, **imported verbatim** from `rulso.bots.random` (no redefinition, no drift). | Click-driven UI builds structured payloads naturally; server re-enumerates legal actions and validates structural equality. |
+| `Pass` handling | Excluded from `ClientAction`. Server picks `Pass` automatically on empty `enumerate_legal_actions`. | Closes a turn-skipping loophole; matches `bots/human` EOF behaviour. |
+| `roll_choice` | Folded into `PlayCard.dice` (existing engine field, ADR-0002 precedent). | One less envelope variant; the dice choice already lives where it's consumed. |
+| `shop_purchase` / `claim_goal` envelopes | Omitted. SHOP purchase is engine-internal (`select_purchase` returns an offer index); goal claims fire automatically in `enter_resolve` (RUL-46). | Additive — future variants extend the `Annotated` union with no `PROTOCOL_VERSION` bump. |
+| `end_of_game` envelope | Not modelled. Terminal state is `StateBroadcast` with `winner` set + `phase=END`. | Simpler; clients already parse state-broadcast every transition. |
+| Parser helper | None. `TypeAdapter(ServerEnvelope).validate_json(raw)` is the idiomatic path the server ticket will use directly. | Avoids redundant wrapper. |
+| `PROTOCOL_VERSION` | `int = 1`. | Bump only on incompatible envelope changes; additive variants / new enum values do not bump. |
+
+**Cross-cutting fixes landed via this RUL-23 sweep**:
+- `docs/engine/readme.md`: `protocol.py` row promoted stub → live with ADR-0008 summary; `test_protocol.py` row added; `_Last edited:` bumped.
+- STATUS.md re-anchored to post-RUL-63 (this entry).
+- ADR-0008 added to active ADRs.
+
+**Worker hand-back flags addressed**:
+- One ADR vs two: worker picked one; orchestrator ratifies. Cadence is shape's consequence under MVP; a future tuning ticket gets its own ADR if coalescing/diff machinery lands.
+- Narrowed envelope set (vs ticket AC listing shop_purchase + claim_goal + roll_choice "at minimum"): worker correctly cross-referenced against the actual engine action surface and pruned the list. Right call — orchestrator originally drafted the AC from the cards.yaml surface, not the action surface. `enumerate_legal_actions` does not return `shop_purchase` or `claim_goal`. Ticket AC was wrong; worker corrected it. The omitted variants are forward-compatible per ADR-0008 §Consequences (one new `BaseModel` subclass + one new union member when needed).
+- No `parse_inbound()` helper: idiomatic `TypeAdapter.validate_json` is what the server ticket will call.
+- No `end_of_game` envelope: terminal state is `StateBroadcast` with `winner` set + `phase=END` — simpler, no redundant terminal-message machinery.
+
+### Open follow-ups post-RUL-63
+
+- **Promote `bots.random` action shapes to `legality.py` or `actions.py`**: this judgment call has been open since RUL-52 (Wave 2). RUL-63 added a third consumer (`protocol.py`); `bots/human.py` and `bots/random.py` are the other two. Worker's hand-back called it "slightly more pressing — future one-PR refactor, no protocol-version impact". Status: still open — file as a parallel-safe refactor when the user wants a side-task; not blocking M3 sequencing.
+- **TS type generation pipeline** (`scripts/regenerate-types.sh` + `client/src/types/`): lands with client-bootstrap sub-issue per the existing M3 fan plan. ADR-0008 §Consequences notes the discriminated-union pattern Pydantic emits maps cleanly to TypeScript tagged unions via `pydantic-to-typescript` / `datamodel-code-generator`.
+
+### Backlog sweep (2026-05-11, this session)
+
+Stale tickets reconciled before M3 open:
+
+| Ticket | Was | Now | Reason |
+|---|---|---|---|
+| RUL-22 | In Progress | Done | Shipped via PR #17 (2026-05-09); the documented orchestrator-PR-prefix gotcha — Linear auto-closed it on a meta-commit, was flipped back to Todo, and never re-closed. Workflow lesson 2026-05-09 entry covers the gotcha. |
+| RUL-36 | Todo | Duplicate of RUL-39 | "Effect dispatcher" — shipped as RUL-39 (Phase 3 D, PR #37). |
+| RUL-37 | Todo | Duplicate of RUL-40 | "status.py apply/decay" — shipped as RUL-40 (Phase 3 E, PR #40). |
+| RUL-38 | Todo | Duplicate of RUL-41 | "ANYONE / EACH_PLAYER scope_mode" — shipped as RUL-41 (Phase 3 F, PR #35). |
+
+RUL-1 / RUL-2 / RUL-3 / RUL-4 (Linear onboarding tickets) are already archived; left alone.
 
 ### M2.5 ship summary (2026-05-11, PRs #59/#60/#61/#63/#64)
 
