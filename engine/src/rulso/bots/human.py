@@ -1,9 +1,10 @@
 """Human-driven action selector — TTY counterpart to ``bots.random``.
 
-Mirrors the random bot's action shapes (``PlayCard``, ``PlayJoker``,
-``DiscardRedraw``, ``Pass``) and reuses its legal-action enumeration so the
-human's menu is identical to what the bot would consider. Pure I/O wiring;
-the engine's pure functions stay untouched.
+Shares the engine's action shapes (``PlayCard``, ``PlayJoker``,
+``DiscardRedraw``, ``Pass``) and legal-action enumeration with the random
+bot via :mod:`rulso.legality`, so the human's menu is identical to what the
+bot would consider. Pure I/O wiring; the engine's pure functions stay
+untouched.
 
 stdin / stdout are injected so the CLI can pipe scripted input in tests
 without monkey-patching ``sys.stdin``. EOF on stdin is treated as a forced
@@ -14,7 +15,7 @@ from __future__ import annotations
 
 from typing import TextIO
 
-from rulso.bots.random import (
+from rulso.legality import (
     Action,
     DiscardRedraw,
     Pass,

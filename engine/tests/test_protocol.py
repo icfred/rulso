@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
-from rulso.bots.random import DiscardRedraw, PlayCard, PlayJoker
+from rulso.legality import DiscardRedraw, PlayCard, PlayJoker
 from rulso.protocol import (
     PROTOCOL_VERSION,
     ActionSubmit,
@@ -174,7 +174,7 @@ def test_invalid_error_code_rejected() -> None:
 
 
 def test_action_submit_with_bad_dice_value_rejected() -> None:
-    """Action shapes inherit constraints from ``bots.random`` (e.g. ``dice ∈ {1, 2, None}``)."""
+    """Action shapes inherit constraints from ``legality`` (e.g. ``dice ∈ {1, 2, None}``)."""
     with pytest.raises(ValidationError):
         CLIENT_ADAPTER.validate_json(
             '{"type":"action_submit","action":'
