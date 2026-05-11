@@ -22,6 +22,7 @@ from rulso.legality import DiscardRedraw, Pass, PlayCard, PlayJoker
 from rulso.rules import (
     advance_phase,
     apply_shop_purchase,
+    discard_redraw,
     pass_turn,
     play_card,
     play_joker,
@@ -29,6 +30,7 @@ from rulso.rules import (
 )
 from rulso.rules import start_game as _start_game
 from rulso.state import (
+    DISCARD_COST,
     PLAYER_COUNT,
     Card,
     GameState,
@@ -113,6 +115,7 @@ def run_game(
                 state,
                 rng,
                 dice_rng,
+                refill_rng,
                 out,
                 human_seat=human_seat,
                 human_stdin=human_stdin,
@@ -185,6 +188,7 @@ def _drive_build_turn(
     state: GameState,
     rng: random.Random,
     dice_rng: random.Random,
+    refill_rng: random.Random,
     out: TextIO,
     *,
     human_seat: int | None = None,
@@ -231,19 +235,25 @@ def _drive_build_turn(
             dice_roll=dice_roll,
         )
     if isinstance(action, DiscardRedraw):
-        # Discard isn't wired into rules.py yet; treat as a pass and flag.
-        # Reachable post-RUL-18 when a player's hand has no slot-compatible
-        # card; full discard wiring lands later.
+        # RUL-68: real discard substrate. Spends DISCARD_COST per card and
+        # draws replacements; ``refill_rng`` shares the disjoint stream that
+        # also feeds round-end hand refills (``enter_resolve`` step 12).
         _emit(
             out,
             "turn",
             round=state.round_number,
             seat=state.active_seat,
             player=active_player.id,
-            action="discard_redraw_unimplemented",
+            action="discard_redraw",
             cards=",".join(action.card_ids),
+            cost=len(action.card_ids) * DISCARD_COST,
         )
-        return pass_turn(state)
+        return discard_redraw(
+            state,
+            active_player.id,
+            action.card_ids,
+            refill_rng=refill_rng,
+        )
     if isinstance(action, Pass):
         _emit(
             out,

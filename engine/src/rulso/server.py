@@ -54,6 +54,7 @@ from rulso.protocol import (
 from rulso.rules import (
     advance_phase,
     apply_shop_purchase,
+    discard_redraw,
     pass_turn,
     play_card,
     play_joker,
@@ -258,9 +259,9 @@ async def _run_game_loop(
             state = advance_phase(state, rng=effect_rng)
         elif state.phase is Phase.BUILD:
             if state.active_seat == human_seat:
-                state = await _take_human_turn(ws, action_queue, state, dice_rng)
+                state = await _take_human_turn(ws, action_queue, state, dice_rng, refill_rng)
             else:
-                state = _take_bot_turn(state, rng, dice_rng)
+                state = _take_bot_turn(state, rng, dice_rng, refill_rng)
         elif state.phase is Phase.RESOLVE:
             state = advance_phase(state, rng=refill_rng)
         elif state.phase is Phase.SHOP:
@@ -283,6 +284,7 @@ async def _take_human_turn(
     action_queue: asyncio.Queue[ActionSubmit],
     state: GameState,
     dice_rng: random.Random,
+    refill_rng: random.Random,
 ) -> GameState:
     """Await one legal submission from the human; auto-pass on empty legal set.
 
@@ -297,7 +299,7 @@ async def _take_human_turn(
     while True:
         envelope = await action_queue.get()
         if envelope.action in legal:
-            return _apply_action(state, envelope.action, dice_rng)
+            return _apply_action(state, envelope.action, dice_rng, refill_rng)
         await _send_envelope(
             ws,
             ErrorEnvelope(
@@ -313,19 +315,21 @@ def _take_bot_turn(
     state: GameState,
     rng: random.Random,
     dice_rng: random.Random,
+    refill_rng: random.Random,
 ) -> GameState:
     """Pick and apply one action for the active non-human seat."""
     player = state.players[state.active_seat]
     action = choose_action(state, player.id, rng)
     if isinstance(action, Pass):
         return pass_turn(state)
-    return _apply_action(state, action, dice_rng)
+    return _apply_action(state, action, dice_rng, refill_rng)
 
 
 def _apply_action(
     state: GameState,
     action: PlayCard | PlayJoker | DiscardRedraw,
     dice_rng: random.Random,
+    refill_rng: random.Random,
 ) -> GameState:
     """Dispatch one action variant to the engine. Pre: legality already checked."""
     player = state.players[state.active_seat]
@@ -341,10 +345,10 @@ def _apply_action(
         card = _find_hand_card(player, action.card_id)
         return play_joker(state, card)
     if isinstance(action, DiscardRedraw):
-        # Discard isn't wired into rules.py yet — mirrors cli._drive_build_turn
-        # which treats DiscardRedraw as a pass until the full discard pipeline
-        # lands.
-        return pass_turn(state)
+        # RUL-68: real discard substrate. Shares ``refill_rng`` with round-end
+        # hand refills (``enter_resolve`` step 12) — both consume the disjoint
+        # ``seed ^ 0x5EED`` stream.
+        return discard_redraw(state, player.id, action.card_ids, refill_rng=refill_rng)
     raise AssertionError(f"unhandled action variant {type(action).__name__}")
 
 

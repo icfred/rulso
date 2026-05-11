@@ -22,6 +22,7 @@ import websockets
 from pydantic import TypeAdapter
 
 from rulso.legality import (
+    DiscardRedraw,
     PlayCard,
     enumerate_legal_actions,
 )
@@ -182,6 +183,57 @@ async def test_action_submit_is_applied_and_broadcast() -> None:
                 if after.active_seat != 0 or after.phase is not Phase.BUILD:
                     return
             pytest.fail("server did not apply submitted action within 20 broadcasts")
+
+
+async def test_discard_redraw_submission_decrements_chips_and_redraws() -> None:
+    """RUL-68: round-trip a ``DiscardRedraw`` envelope and verify the next
+    broadcast reflects deducted chips and a refilled hand.
+
+    Sweeps a few seeds to find one where the human's legal set contains a
+    ``DiscardRedraw`` — only fires when chips are affordable. The first
+    chip-mutated broadcast captures the post-discard state; if the build
+    revolution finished (or the rule failed) on the same turn, ``after``
+    may carry phase=ROUND_START with played fragments folded into the
+    discard pile. Either way, the player's chip drop and refilled hand
+    size prove the discard pipeline executed.
+    """
+    from rulso.state import DISCARD_COST
+
+    for seed in range(6):
+        async with _server_running(seed=seed, human_seat=0) as port:
+            async with websockets.connect(f"ws://127.0.0.1:{port}") as ws:
+                await _recv_hello(ws)
+                human_turn = await _drain_until_human_build(ws, human_seat=0)
+                state_before = human_turn.state
+                player_before = state_before.players[0]
+                legal = enumerate_legal_actions(state_before, player_before)
+                discard_action = next(
+                    (a for a in legal if isinstance(a, DiscardRedraw)),
+                    None,
+                )
+                if discard_action is None:
+                    continue
+                k = len(discard_action.card_ids)
+                await ws.send(ActionSubmit(action=discard_action).model_dump_json())
+                for _ in range(20):
+                    msg = await _recv_envelope(ws)
+                    if not isinstance(msg, StateBroadcast):
+                        continue
+                    after = msg.state
+                    player_after = after.players[0]
+                    if player_after.chips == player_before.chips:
+                        continue
+                    assert player_after.chips == player_before.chips - k * DISCARD_COST
+                    # Hand size is preserved across discard_redraw: k cards
+                    # leave the hand to the discard pile, k enter from the
+                    # deck. (Refills at round-end can only top up unchanged
+                    # or larger; they never drop below ``len(hand_before)``.)
+                    assert len(player_after.hand) >= len(player_before.hand)
+                    return
+                pytest.fail(
+                    f"server did not apply submitted discard within 20 broadcasts (seed={seed})"
+                )
+    pytest.fail("no seed in 0..5 produced a human DiscardRedraw legal option")
 
 
 # --- rejection codes -------------------------------------------------------
