@@ -1,0 +1,23 @@
+{
+  "name": "rulso-client",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "format": "biome format --write src",
+    "lint": "biome check src"
+  },
+  "dependencies": {
+    "pixi.js": "^8.6.6"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "1.9.4",
+    "json-schema-to-typescript": "^15.0.4",
+    "typescript": "^5.7.3",
+    "vite": "^6.0.7"
+  }
+}

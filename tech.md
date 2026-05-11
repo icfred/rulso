@@ -110,12 +110,16 @@ For MVP, full-state on every change is fine (single-player, low frequency). Diff
 
 Engine is the source of truth for shape. Client types are generated from Pydantic models so they cannot drift.
 
-Approach: `pydantic-to-typescript` or `datamodel-code-generator` emits `client/src/types/*.ts` from `engine/src/rulso/state.py` + `protocol.py`. Run on engine change; commit output.
+Pipeline (RUL-66): `pydantic-to-typescript` (engine dev-dep, pinned in `engine/pyproject.toml [dependency-groups.dev]`) walks `rulso.protocol` for `BaseModel` subclasses, emits per-model JSON Schema, and pipes through `json-schema-to-typescript` (client dev-dep, resolved via `client/node_modules/.bin/json2ts`) into a single `client/src/types/generated.ts`. Output is committed (not gitignored); re-runs are byte-identical given identical sources.
+
+A hand-curated `client/src/types/envelopes.ts` re-exports the discriminated unions (`ServerEnvelope` / `ClientAction` / `ClientEnvelope`) — pydantic2ts surfaces every `BaseModel` but not the `Annotated[Union[...], Field(discriminator=...)]` aliases (those are `TypeAdapter` aliases, not `BaseModel` subclasses).
 
 ```bash
-# proposed — lives at repo root
+# from repo root
 ./scripts/regenerate-types.sh
 ```
+
+Requires `uv` on PATH and `npm install` in `client/`.
 
 ## Bot AI
 
