@@ -365,3 +365,37 @@ Two changes worth promoting:
 2. **Ticket-body refresh on ADR landing**: when an ADR ratifies after a ticket was filed, the ticket body's hard constraints should be reviewed for stale "do not X" rules that the ADR has since authorised. RUL-56's body wasn't refreshed when ADR-0007 landed (one hour earlier in the same session); the worker correctly treated the stale body as authoritative. The orchestrator's merge-sweep checklist should include "if a sibling ADR shipped in this batch, refresh affected ticket bodies before re-dispatch".
 
 Worth promoting to global `CLAUDE.md`: ADRs that authorise specific in-PR activities should have those authorisations surfaced at hand-over time, not buried in the ADR body. The cost is one extra line in the hand-over; the saving is one stop-condition cycle per occurrence.
+
+---
+
+---
+date: 2026-05-11
+ticket-context: RUL-64, RUL-23
+template-worthy: maybe
+---
+
+## What happened
+
+RUL-64 introduced the engine's first asyncio test surface (`engine/tests/test_server.py`) and configured `asyncio_mode = "auto"` in `engine/pyproject.toml [tool.pytest.ini_options]` so plain `async def` tests are picked up without `@pytest.mark.asyncio` decorators. Worked fine when the worker ran `cd engine && uv run pytest` (510/510 green).
+
+During the merge-sweep verification, the orchestrator ran the *project-root* invocation `uv run --project engine pytest` (the form the existing memory rule `feedback_readme_cwd_context.md` enshrines for `rulso` CLI invocation). Result: 7 of the 11 server tests failed with "async def functions are not natively supported" despite `pytest-asyncio` being installed and the config being present. The other 503 tests (all sync) passed.
+
+Root cause: from the project root, pytest auto-discovers its rootdir as the cwd (`/home/freaz/Documents/Projects/Rulso`), not the engine subdirectory. There is no `pyproject.toml` at the project root, so pytest never finds the `[tool.pytest.ini_options]` block in `engine/pyproject.toml` — `asyncio_mode` falls back to `strict`, async tests are collected but not executed, and the suite reports failures.
+
+Caught manually because the orchestrator noticed the count discrepancy (510 expected, 503 reported) and re-ran from `engine/` cwd. Pre-commit doesn't run pytest, so a CI-shaped flow that called `uv run --project engine pytest` from the repo root would silently skip every async test in the engine for the lifetime of the project.
+
+## Root cause
+
+Two reinforcing factors. (1) The `feedback_readme_cwd_context.md` memory rule established `uv run --project engine rulso …` (and by analogy, `uv run --project engine pytest`) as the project-root-safe invocation for *runtime* commands — `--project engine` makes uv resolve the venv against the engine subdirectory regardless of cwd. That works for `rulso` (a console-script entry point) because the entry point doesn't care about cwd. It does *not* work for `pytest`, which uses cwd to discover its rootdir and configfile. The rule generalised one step too far. (2) Pytest's "config not found" silently falls back to defaults instead of erroring — there is no warning that `asyncio_mode = "auto"` was specified somewhere on disk but not loaded. The failure mode is a green-looking sync suite with quietly-skipped async tests, the worst possible shape.
+
+## Fix in project
+
+- Memory rule note: this instance is the second case where the "uv run --project engine X from anywhere" idiom needs qualification (after the existing README cwd lesson). For pytest specifically, either invoke from `engine/` or pass `engine/tests` explicitly: `uv run --project engine pytest engine/tests`. The latter triggers pytest's ancestor-walk for configfile discovery from the testpath.
+- `docs/engine/readme.md` "Commands" section already says "Run from `engine/`" — that prescription is now load-bearing for the asyncio test path. Keep it.
+- The test-server.py row in the surface table notes the `pytest-asyncio` `auto` dependency on the engine pyproject configfile so future readers know why cwd matters for this suite specifically.
+
+## Proposed template change
+
+Lift to `feedback_readme_cwd_context.md`: extend the rule to call out that `uv run --project engine pytest` only finds the `[tool.pytest.ini_options]` block if pytest can resolve the engine pyproject as its configfile. For invocations where rootdir matters (pytest, ruff with project-relative paths, anything that walks ancestors for config), prefer either (a) `cd engine && uv run pytest` or (b) `uv run --project engine pytest engine/tests`. The bare `uv run --project engine pytest` from project root works for sync-only suites but silently regresses on any plugin-mode that depends on the configfile being found.
+
+Worth promoting to global `CLAUDE.md`: in monorepos with no root `pyproject.toml`, pre-merge verification commands MUST quote the cwd or pass an explicit path. "uv run --project X pytest" is necessary but not sufficient — pytest's rootdir discovery does not piggyback on `--project`.

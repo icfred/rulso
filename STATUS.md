@@ -1,4 +1,4 @@
-_Last updated: 2026-05-11 by orchestrator session — **M3 SUBSTRATE LOCKED**: RUL-63 (WS protocol envelope shape) shipped via PR #66 — ADR-0008 ratifies envelope structure + MVP broadcast cadence + structured action-submit shape (Pydantic action models imported verbatim from `bots.random`, no drift possible). Main at **499 tests passing** (479 + 20 new), ruff clean. Backlog sweep this session: RUL-22 → Done; RUL-36/37/38 → Duplicate of RUL-39/40/41. Next dispatch: engine-server sub-issue (asyncio loop, connection management, broadcast-on-transition) — file + emit hand-over._
+_Last updated: 2026-05-11 by orchestrator session — **M3 ENGINE COMPLETE**: RUL-64 (asyncio WS server, single-game per process, broadcast on `GameState` transition, per ADR-0008) shipped via PR #69; RUL-65 (action-shape promotion to `legality.py` — engine's canonical action surface) shipped via PR #68. Workers ran in parallel; orchestrator merged RUL-65 first, rebased RUL-64 in-place with import re-points, merged. Main at **510 tests passing** (499 + 11 new in `test_server.py`), ruff clean. Workflow lesson captured: `uv run --project engine pytest` from project root silently skips async tests (configfile discovery doesn't piggyback on `--project`); `cd engine && uv run pytest` is the verification incantation. Next M3 dispatchable: client bootstrap (Vite + Pixi + TS scaffold + WS client) — file + emit hand-over._
 
 # Rulso — orchestrator bootstrap
 
@@ -14,7 +14,7 @@ Linear board: https://linear.app/rulso (team `RUL`, projects: Engine / Infra / B
 | RUL-15 | M1.5: Watchable engine | First moment the game is *real* | **Done** (closed 2026-05-10) |
 | RUL-24 | M2: Full card set | Every card type and mechanic from cards.yaml works | **Done** (closed 2026-05-10) — gap-close set tracked as M2.5 below. |
 | _(no parent)_ | **M2.5: Mechanic gaps** (pre-M3 sweep) | Close M2 mechanics that ship in code but not in play | **Done** (closed 2026-05-11) — RUL-57/60/62 in batch 1 + RUL-61/56 in batch 2. All 5 shipped; M2.5 follow-ups under RUL-24 cleared. |
-| RUL-58 | **M3: Foundation/Minimal Client** | Human can read the board, make a meaningful decision, reach a winner | **In Progress (opened 2026-05-11)** — Substrate locked via ADR-0008 (RUL-63, PR #66). Next dispatchable sub-issue: engine server loop. |
+| RUL-58 | **M3: Foundation/Minimal Client** | Human can read the board, make a meaningful decision, reach a winner | **In Progress (opened 2026-05-11)** — Engine side complete: RUL-63 (envelope, PR #66), RUL-64 (server, PR #69). Next dispatchable sub-issue: client bootstrap (Vite/Pixi/TS scaffold + WS client). |
 | RUL-59 | **M4: Smart bot (ISMCTS)** | ISMCTS surfaces real design feedback in solo play | **Backlog** — blocked-by RUL-58; payoff design draws on M3 playtest signal. |
 | RUL-23 | Meta — orchestrator-authored cross-cutting commits | Permanent home for orchestrator commits | Permanent In Progress |
 
@@ -32,7 +32,36 @@ Foundation Client DoD bar is "ugly but playable": engine WS protocol + server, c
 
 ## In flight
 
-**M3 substrate locked (2026-05-11, PR #66).** RUL-58 In Progress. Next dispatchable sub-issue: engine server loop (asyncio + `websockets`, broadcast on `GameState` transition). Filing as a new sub-issue + emitting hand-over on this turn.
+**Nothing in flight.** RUL-58 M3 engine side fully shipped (RUL-63 envelope + RUL-64 server). Next dispatchable: M3 client bootstrap (Vite + Pixi + TS scaffold + `net.ts` WS client connecting to `rulso-server`). Then in sequence: TS type-generation pipeline, decision-support rendering, click-to-play input, dice text, finally re-wire `bots/human` TTY through the WS (per RUL-64's "Out of scope" — final M3 sub-issue).
+
+### RUL-64 + RUL-65 ship summary (2026-05-11, PRs #68 / #69)
+
+| Ticket | PR | Notes |
+|---|---|---|
+| RUL-65 | #68 | Action surface promoted from `bots.random` to `legality.py`. Worker hit the predictable cycle (`bots.random → legality` already imports `can_attach_joker`), made the right judgment call: also moved `_enumerate_plays` / `_enumerate_discards` / `_OP_ONLY_*` into `legality` rather than hand back. `bots.random.choose_action` now re-imports from `legality`. Single source for `protocol.ClientAction` Pydantic class identity (ADR-0008's "no drift" guarantee preserved). 499/499 green; clean break, no re-export shims. `docs/engine/legality.md` rewritten in this RUL-23 sweep to reflect the new role. |
+| RUL-64 | #69 | Engine WS server. `async def run_server(*, host, port, seed, human_seat)` + sync `def main()` exposed via `rulso-server` console script. Per-connection model: a reader coroutine drains envelopes (`PROTOCOL_INVALID` / `NOT_YOUR_TURN` rejection on the wire) and queues legitimate `ActionSubmit`s for the game loop, which validates legality at apply time and replies with `ILLEGAL_ACTION` if the queued action is no longer valid. Reader and game loop yield once after every queue-put / broadcast (`await asyncio.sleep(0)`) so the two stay in lockstep — without these yields the bot rotation outruns reader scheduling on fast localhost and rejection-code attribution becomes nondeterministic (documented in module + reader docstrings). Disjoint-rng pattern preserved (`seed / seed^0x5EED / seed^0xD1CE / seed^0xEFFC`). 11 new tests in `test_server.py` covering handshake, bot-only progress, action round-trip, all three rejection codes, end-to-end termination. |
+
+**Merge sequence**: RUL-65 merged first (clean against pre-RUL-64 main); RUL-64 rebased in-place (no file conflicts — fully disjoint surfaces) but its `server.py` + `test_server.py` imports needed re-pointing from `bots.random` → `legality` for the moved symbols. Orchestrator pushed `RUL-64: re-point action-shape imports to legality.py post-RUL-65` to RUL-64's branch (mechanical 4-line fixup; squash-merged into the main RUL-64 commit). Pattern: same as the 2026-05-10 behavioural-substrate cascade lesson (CLEAN merge mechanics is necessary but not sufficient when a sibling has landed a contract change) — caught proactively this time, not post-merge.
+
+**Cross-cutting fixes landed via this RUL-23 sweep**:
+- `docs/engine/readme.md`: `legality.py` row expanded (now owns full action surface + internal enumerators); `server.py` stub → live with per-feature description; `protocol.py` row updated to cite `legality` as the action-shape source (was `bots.random`); `bots/random.py` row trimmed to its post-RUL-65 surface (`choose_action`, `select_purchase`, `_find_player`); `bots/human.py` row updated to cite `legality.enumerate_legal_actions`; new `test_server.py` row added with the `pytest-asyncio` cwd caveat. `_Last edited:` bumped.
+- `docs/engine/legality.md`: full rewrite — pre-RUL-65 doc only covered `first_card_of_type` (one helper); post-RUL-65 doc covers the full action vocabulary, enumeration helper, internal enumerators, and the `bots.random ↔ legality` cycle-avoidance rationale. References every test that exercises the surface.
+- `docs/workflow_lessons.md`: new entry 2026-05-11 — `uv run --project engine pytest` from project root silently skips async tests because pytest's rootdir discovery doesn't piggyback on `--project`. Verification incantation is `cd engine && uv run pytest` OR `uv run --project engine pytest engine/tests`. Template-worthy: maybe (extends the existing `feedback_readme_cwd_context.md` rule to invocations whose rootdir resolution drives configfile discovery).
+- STATUS.md re-anchored to post-RUL-64/65 (this entry).
+
+**Worker hand-back flags addressed**:
+
+- RUL-65: worker moved `_enumerate_*` helpers into `legality` to dodge a circular import (DoD literally said they stay in `bots.random`). Right call — moving them was the *only* way to avoid the cycle without leaving behaviour broken. Spirit honoured (canonical home in `legality`, bot-policy bias/RNG in `bots.random`). Accepted; no follow-up.
+- RUL-64: `_OP_ONLY_COMPARATOR_NAMES` is duplicated between `cli.py` and `server.py` as a private constant. Worker flagged as a tidy candidate. **Status**: open follow-up — minor; promote to `legality.py` when the next ticket touches that constant. Not blocking.
+- RUL-64: `pytest-asyncio>=1.0` added as a dev dep + `asyncio_mode = "auto"` in `engine/pyproject.toml [tool.pytest.ini_options]`. First asyncio test in the suite. Caused the cwd-discovery surprise above; lesson captured.
+- RUL-64: `DiscardRedraw` is treated as `pass_turn` on the server, matching `cli._drive_build_turn`'s placeholder. Full discard pipeline still belongs to a later ticket. **Status**: open follow-up — wire when client-side discard UX lands.
+- RUL-64: `bots.random` was a *fourth* in-tree consumer of the action shapes when the worker shipped (`cli`, `bots/human`, `protocol`, `server`). Worker correctly stop-conditioned the inline refactor per RUL-64's "Out of scope" — RUL-65 lands the promotion in its own PR. The orchestrator-pushed fixup re-pointed `server.py`'s imports to `legality` post-merge.
+
+### Open follow-ups post-RUL-64/65
+
+- **`_OP_ONLY_COMPARATOR_NAMES` duplication** between `cli.py` and `server.py` — a private constant the random bot also uses (the `_OP_ONLY_*` set was moved to `legality.py` by RUL-65). The two driver modules redefine it locally. Promote to `legality.py` (or `effects.py`, where `is_operator_modifier` lives) and have both drivers import it. **Parallel-safe one-PR refactor**, low priority — file when a worker has a side-task slot.
+- **Server-side `DiscardRedraw` placeholder**: `server.py` currently treats `DiscardRedraw` as `pass_turn` (matching `cli._drive_build_turn` at the time of writing). The full discard pipeline will land with the M3 client-side discard UX. **Wait for client-side discard surface to be specced** before filing.
+- **TS type generation pipeline** (`scripts/regenerate-types.sh` + `client/src/types/`): lands as its own M3 sub-issue per the original plan. Filed alongside or after client bootstrap — sequencing TBD on bootstrap-ticket scope.
 
 ### RUL-63 ship summary (2026-05-11, PR #66)
 
@@ -59,10 +88,10 @@ Foundation Client DoD bar is "ugly but playable": engine WS protocol + server, c
 - No `parse_inbound()` helper: idiomatic `TypeAdapter.validate_json` is what the server ticket will call.
 - No `end_of_game` envelope: terminal state is `StateBroadcast` with `winner` set + `phase=END` — simpler, no redundant terminal-message machinery.
 
-### Open follow-ups post-RUL-63
+### Open follow-ups post-RUL-63 (resolved by this sweep)
 
-- **Promote `bots.random` action shapes to `legality.py` or `actions.py`**: this judgment call has been open since RUL-52 (Wave 2). RUL-63 added a third consumer (`protocol.py`); `bots/human.py` and `bots/random.py` are the other two. Worker's hand-back called it "slightly more pressing — future one-PR refactor, no protocol-version impact". Status: still open — file as a parallel-safe refactor when the user wants a side-task; not blocking M3 sequencing.
-- **TS type generation pipeline** (`scripts/regenerate-types.sh` + `client/src/types/`): lands with client-bootstrap sub-issue per the existing M3 fan plan. ADR-0008 §Consequences notes the discriminated-union pattern Pydantic emits maps cleanly to TypeScript tagged unions via `pydantic-to-typescript` / `datamodel-code-generator`.
+- ~~**Promote `bots.random` action shapes to `legality.py` or `actions.py`**~~ — **DONE 2026-05-11 (RUL-65, PR #68)**. `legality.py` is now the engine's canonical action surface.
+- **TS type generation pipeline** (`scripts/regenerate-types.sh` + `client/src/types/`): lands as a sibling/successor of client-bootstrap sub-issue per the M3 fan plan. ADR-0008 §Consequences notes the discriminated-union pattern Pydantic emits maps cleanly to TypeScript tagged unions via `pydantic-to-typescript` / `datamodel-code-generator`. **Carried into the post-RUL-64/65 follow-ups list above.**
 
 ### Backlog sweep (2026-05-11, this session)
 
@@ -244,7 +273,7 @@ M1 + M1.5 + M2 Phase 1 + M2 Phase 2 + M2 Phase 3 fan + Wave 1 + Wave 2 + Wave 3 
 - Pydantic v2 + frozen by default; tuples for collections.
 - M2 stubs are fully replaced — SHOP entry landed via RUL-51 (PR #55).
 - Pre-commit hook resolves `ruff` via `uv run --project engine`.
-- **Active ADRs**: ADR-0001 (floating-label definitions), ADR-0002 (comparator dice flow), ADR-0003 (SUBJECT.scope_mode enum), ADR-0004 (operator MODIFIER attachment), ADR-0005 (GoalCard typing).
+- **Active ADRs**: ADR-0001 (floating-label definitions), ADR-0002 (comparator dice flow), ADR-0003 (SUBJECT.scope_mode enum), ADR-0004 (operator MODIFIER attachment), ADR-0005 (GoalCard typing), ADR-0006 (M3/M4 reorder — Foundation Client first), ADR-0007 (SHOP payload semantics), ADR-0008 (WS protocol envelope shape).
 - Workers do not edit `docs/<area>/readme.md` — orchestrator owns the index, batched into RUL-23 commits per merge sweep.
 - Workers branch worktrees from `origin/main` (not local HEAD) — `git fetch origin && git worktree add ... origin/main`.
 - All orchestrator-authored cross-cutting commits route through `RUL-23:`.
@@ -253,7 +282,7 @@ M1 + M1.5 + M2 Phase 1 + M2 Phase 2 + M2 Phase 3 fan + Wave 1 + Wave 2 + Wave 3 
 - **Substrate-and-data tickets** must split DoD into (a) data loadable + (b) data observable in runtime.
 - **Behavioural-substrate cascade rule** (2026-05-10): when a PR changes a public-function contract (signature, required-field consumption, exception class), every test that constructs `GameState` for the affected code path is implicitly impacted. Rebase against post-merge main and run affected tests before squash-merge if the PR is part of a parallel fan with a sibling that landed a contract change. CLEAN merge mechanics is necessary but not sufficient.
 - **Conditional-substrate rule** (2026-05-10, RUL-54): when a PR adds a code path that fires conditionally on accumulated runtime state (deck exhaustion, retry counter, history growth), spot-check by asking "what's the depth at which this branch first triggers, and does any test reach it?" If no test reaches the branch and it's reachable in production, the path is unreviewed substrate. RUL-47's `rng=None` fallback at the recycle site didn't bite until round 13; RUL-54 lifted it to a `ValueError` so future callers can't silently regress. Disjoint-stream pattern: `rng = seed`, `refill_rng = seed ^ 0x5EED`, `dice_rng = seed ^ 0xD1CE`, `effect_rng = seed ^ 0xEFFC` (RUL-54).
-- **Public legal-action surface (Wave 2)**: `bots.random.enumerate_legal_actions(state, player)` is the canonical raw legal-action enumeration — no `PLAY_BIAS` weighting; consumed by `bots.human` and any future driver. `bots.random.choose_action` remains the bot's PLAY_BIAS-weighted picker (`PLAY_BIAS = 0.75` post-RUL-55).
+- **Engine action surface (post-RUL-65, 2026-05-11)**: `engine/src/rulso/legality.py` is the canonical home for action shapes (`PlayCard` / `DiscardRedraw` / `Pass` / `PlayJoker` / `Action` discriminated union) **and** `enumerate_legal_actions(state, player)`. Internal `_enumerate_plays` / `_enumerate_discards` co-located there to dodge a `bots.random ↔ legality` import cycle. `bots.random` keeps `choose_action` (PLAY_BIAS-weighted picker, `PLAY_BIAS = 0.75` post-RUL-55), `select_purchase` (SHOP), `_find_player`. `protocol.py`'s `ClientAction` discriminated union and the bot's constructor calls share the same Pydantic class identity (single source = `legality`), preserving ADR-0008's "no drift" guarantee. `bots/human.py` and `server.py` both validate against `legality.enumerate_legal_actions`.
 - **SHOP substrate (Wave 4, RUL-51)**: `Phase.SHOP` real handler at `engine/src/rulso/rules.py` (`enter_round_start` step-5 cadence check + `complete_shop` / `apply_shop_purchase` / `shop_purchase_order` helpers). `ShopOffer` model + `shop_pool` / `shop_offer` / `shop_discard` fields on `GameState`. Cadence `round_number % SHOP_INTERVAL == 0` (every 3 rounds); buy order `(vp asc, chips asc, seat asc)` per `design/state.md`. `cards.yaml shop_cards:` ships empty — SHOP short-circuits when no offers; content lands via RUL-56.
 
 ## Conventions (also in CLAUDE.md, restated for reflex)
