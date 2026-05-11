@@ -6,7 +6,8 @@ import random
 
 import pytest
 
-from rulso.bots.random import PLAY_BIAS, DiscardRedraw, Pass, PlayCard, choose_action
+from rulso.bots.random import PLAY_BIAS, choose_action
+from rulso.legality import DiscardRedraw, Pass, PlayCard
 from rulso.state import (
     Card,
     CardType,

@@ -14,7 +14,7 @@ Discriminated unions:
   :data:`ClientEnvelope` (:class:`ActionSubmit`).
 * Inside :class:`ActionSubmit`, the wrapped action is itself a discriminated
   union — tagged on ``kind`` (existing engine convention; see
-  :mod:`rulso.bots.random`). Action shapes are imported, not redefined, so
+  :mod:`rulso.legality`). Action shapes are imported, not redefined, so
   the wire format and the engine's internal action model stay one and the
   same; no risk of structural drift.
 
@@ -32,7 +32,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from rulso.bots.random import DiscardRedraw, PlayCard, PlayJoker
+from rulso.legality import DiscardRedraw, PlayCard, PlayJoker
 from rulso.state import GameState
 
 PROTOCOL_VERSION: int = 1

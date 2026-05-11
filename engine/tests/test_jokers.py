@@ -18,8 +18,8 @@ import random
 
 import pytest
 
-from rulso.bots.random import PlayJoker, choose_action
-from rulso.legality import can_attach_joker
+from rulso.bots.random import choose_action
+from rulso.legality import PlayJoker, can_attach_joker
 from rulso.rules import (
     enter_resolve,
     play_joker,
@@ -378,7 +378,7 @@ def test_bot_skips_joker_when_one_already_attached() -> None:
         active_seat=0,
     )
     # No legal play, no chips for discard → forced pass.
-    from rulso.bots.random import Pass
+    from rulso.legality import Pass
 
     action = choose_action(state, "p0", random.Random(0))
     assert isinstance(action, Pass)

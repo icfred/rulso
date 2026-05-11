@@ -17,14 +17,8 @@ from collections.abc import Sequence
 from typing import TextIO
 
 from rulso.bots import human as human_bot
-from rulso.bots.random import (
-    DiscardRedraw,
-    Pass,
-    PlayCard,
-    PlayJoker,
-    choose_action,
-    select_purchase,
-)
+from rulso.bots.random import choose_action, select_purchase
+from rulso.legality import DiscardRedraw, Pass, PlayCard, PlayJoker
 from rulso.rules import (
     advance_phase,
     apply_shop_purchase,
