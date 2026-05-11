@@ -1,4 +1,4 @@
-_Last edited: 2026-05-11 by RUL-23 (M2.5 CLOSED — sweep batch 2: RUL-61 status-card data + RUL-56 SHOP content)_
+_Last edited: 2026-05-11 by RUL-23 (M3 OPENED — RUL-63 substrate spike: WS protocol envelopes locked via ADR-0008)_
 
 # engine
 
@@ -22,7 +22,7 @@ Python 3.12 package. `uv` managed. Pydantic v2 state, asyncio + `websockets` ser
 | `engine/src/rulso/status.py` | live | per-token apply/clear/decay matrix (BURN / MUTE / BLESSED / MARKED / CHAINED) per RUL-30 spike; round-start tick replaces M1.5 `_apply_burn_tick` (RUL-40 E). `consume_blessed_or_else` wired into `effects._lose_chips` and the BURN tick (RUL-49); zero-magnitude losses do not consume BLESSED — see [status.md](status.md) |
 | `engine/src/rulso/goals.py` | live | goal-claim engine (RUL-46 K): predicate registry, per-round claim + replenish for `single`, persist for `renewable`; ADR-0005 retypes `goal_deck` / `goal_discard` / `active_goals` to `GoalCard` |
 | `engine/src/rulso/server.py` | stub | websocket entry point |
-| `engine/src/rulso/protocol.py` | stub | engine↔client message types |
+| `engine/src/rulso/protocol.py` | live | WS envelopes per ADR-0008 (RUL-63): `Hello` / `StateBroadcast` / `ErrorEnvelope` (server→client, `type` discriminator) + `ActionSubmit` (client→server, wraps `PlayCard | PlayJoker | DiscardRedraw` imported verbatim from `bots.random`, `kind` discriminator). `PROTOCOL_VERSION=1`; `Pass` excluded client-side (server picks on empty enumeration) — see [protocol.md](protocol.md) |
 | `engine/src/rulso/bots/__init__.py` | stub | bots package |
 | `engine/src/rulso/bots/random.py` | live | random-legal-play bot + public `enumerate_legal_actions` helper (RUL-52) + `select_purchase` SHOP picker (RUL-51); `PLAY_BIAS = 0.75` post-RUL-55 — see [bots.md](bots.md) |
 | `engine/src/rulso/bots/human.py` | live | TTY action driver for `--human-seat` (RUL-52); EOF→Pass; reuses `bots.random.enumerate_legal_actions` for the menu |
@@ -52,6 +52,7 @@ Python 3.12 package. `uv` managed. Pydantic v2 state, asyncio + `websockets` ser
 | `engine/tests/test_determinism.py` | live | end-to-end determinism past effect-deck recycle (RUL-54): byte-identical stdout on 3 seeds across back-to-back `cli.run_game` invocations + guard that the recycle threshold is actually crossed |
 | `engine/tests/test_m2_watchable.py` | live | M2 watchable smoke (RUL-35 Wave 3 gate; floor migrated 5→7 via RUL-55 PLAY_BIAS tune, then 7→6 via RUL-61 full-vocabulary baseline; RUL-56 SHOP tuning held the 6/10 floor): 10-seed × rounds=200 sweep asserts winner floor, full M2 lifecycle coverage (WHEN/WHILE/goal/effect) via test-side wrapper instrumentation — see [m2-smoke.md](m2-smoke.md) |
 | `engine/tests/test_shop.py` | live | SHOP phase coverage (RUL-51 substrate + RUL-56 M2.5 content): cadence (every `SHOP_INTERVAL=3` rounds), buy order (VP asc → chips asc → seat asc), `apply_shop_purchase` / `complete_shop` / pool-recycle / starter-pool loader / e2e CLI `event=shop_*` emission |
+| `engine/tests/test_protocol.py` | live | WS envelope round-trip + dispatch + validation (RUL-63, ADR-0008): server/client `TypeAdapter` round-trip on every variant; `start_game(0)` full-state broadcast round-trip; discriminator dispatch on `type` (outer) and `kind` (inner action); rejection paths for unknown types, missing fields, `Pass` from client, invalid `ErrorCode`, dice out of range |
 
 ## Commands
 
