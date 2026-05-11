@@ -56,6 +56,26 @@ def test_state_broadcast_round_trip_with_real_game_state() -> None:
     assert isinstance(parsed, StateBroadcast)
     assert parsed == msg
     assert parsed.state == state
+    # Default ``legal_actions`` is None for bot-active / non-BUILD broadcasts.
+    assert parsed.legal_actions is None
+
+
+def test_state_broadcast_round_trip_with_legal_actions() -> None:
+    """``legal_actions`` round-trips as a discriminated-union tuple."""
+    state = start_game(0)
+    actions = (
+        PlayCard(card_id="subj.leader", slot="SUBJECT", dice=None),
+        PlayJoker(card_id="jkr.double"),
+        DiscardRedraw(card_ids=("a", "b")),
+    )
+    msg = StateBroadcast(state=state, legal_actions=actions)
+    parsed = SERVER_ADAPTER.validate_json(msg.model_dump_json())
+    assert isinstance(parsed, StateBroadcast)
+    assert parsed == msg
+    assert parsed.legal_actions == actions
+    assert isinstance(parsed.legal_actions[0], PlayCard)
+    assert isinstance(parsed.legal_actions[1], PlayJoker)
+    assert isinstance(parsed.legal_actions[2], DiscardRedraw)
 
 
 def test_error_envelope_round_trip() -> None:

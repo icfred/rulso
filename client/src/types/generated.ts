@@ -224,8 +224,15 @@ export interface Hello {
  * Sent on every engine transition that mutates ``GameState`` (phase change,
  * action applied, status tick, shop resolution). MVP cadence is "every
  * transition" per ADR-0008; a diff protocol is a future additive variant.
+ *
+ * ``legal_actions`` is populated only on broadcasts where the human seat is
+ * active in BUILD — the client renders one button per entry and submits the
+ * chosen action via :class:`ActionSubmit`. ``None`` on every other broadcast
+ * (bot turns, non-BUILD phases, terminal state). Additive per ADR-0008
+ * §Consequences — no ``PROTOCOL_VERSION`` bump.
  */
 export interface StateBroadcast {
   type?: "state";
   state: GameState;
+  legal_actions?: (PlayCard | PlayJoker | DiscardRedraw)[] | null;
 }
