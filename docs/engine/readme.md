@@ -1,4 +1,4 @@
-_Last edited: 2026-05-11 by RUL-23 (M2.5 sweep batch 1: RUL-57 bots.md dice rule + RUL-60 MARKED consumer + RUL-62 ADR-0007 SHOP payload semantics)_
+_Last edited: 2026-05-11 by RUL-23 (M2.5 CLOSED — sweep batch 2: RUL-61 status-card data + RUL-56 SHOP content)_
 
 # engine
 
@@ -50,8 +50,8 @@ Python 3.12 package. `uv` managed. Pydantic v2 state, asyncio + `websockets` ser
 | `engine/tests/test_jokers.py` | live | JOKER attachment (RUL-45 J): PERSIST_WHEN/WHILE promote, ECHO conditional one-shot WHEN, DOUBLE effect doubling |
 | `engine/tests/test_cli_human_seat.py` | live | CLI human-seat driver (RUL-52): valid-pick happy path, invalid/out-of-range loop, EOF→Pass fallback, all 4 seats parametrised, out-of-range CLI flag rejection |
 | `engine/tests/test_determinism.py` | live | end-to-end determinism past effect-deck recycle (RUL-54): byte-identical stdout on 3 seeds across back-to-back `cli.run_game` invocations + guard that the recycle threshold is actually crossed |
-| `engine/tests/test_m2_watchable.py` | live | M2 watchable smoke (RUL-35 Wave 3 gate; RUL-55 Phase 3.5 polish lifted floor 5→7): 10-seed × rounds=200 sweep asserts winner floor (7/10), full M2 lifecycle coverage (WHEN/WHILE/goal/effect) via test-side wrapper instrumentation — see [m2-smoke.md](m2-smoke.md) |
-| `engine/tests/test_shop.py` | live | SHOP phase coverage (RUL-51): cadence (every `SHOP_INTERVAL=3` rounds), buy order (VP asc → chips asc → seat asc), `apply_shop_purchase` / `complete_shop` / pool-recycle / end-to-end SHOP → next round_start |
+| `engine/tests/test_m2_watchable.py` | live | M2 watchable smoke (RUL-35 Wave 3 gate; floor migrated 5→7 via RUL-55 PLAY_BIAS tune, then 7→6 via RUL-61 full-vocabulary baseline; RUL-56 SHOP tuning held the 6/10 floor): 10-seed × rounds=200 sweep asserts winner floor, full M2 lifecycle coverage (WHEN/WHILE/goal/effect) via test-side wrapper instrumentation — see [m2-smoke.md](m2-smoke.md) |
+| `engine/tests/test_shop.py` | live | SHOP phase coverage (RUL-51 substrate + RUL-56 M2.5 content): cadence (every `SHOP_INTERVAL=3` rounds), buy order (VP asc → chips asc → seat asc), `apply_shop_purchase` / `complete_shop` / pool-recycle / starter-pool loader / e2e CLI `event=shop_*` emission |
 
 ## Commands
 

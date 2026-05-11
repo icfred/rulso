@@ -329,3 +329,39 @@ The existing watchpoint in `PROJECT_CONTEXT.md` ("Substrate-and-data tickets mus
 `workflows/pr-merge.md` step 1.5 sub-bullet (existing): "If the PR is part of a parallel fan where a sibling has already landed a contract change, rebase the PR's branch against post-merge main and run the affected test files before squash-merging." Extend with: "If the PR changes `design/cards.yaml deck:` composition (counts of any card kind), the *affected test files* explicitly include `test_cards_loader.py`, `test_determinism.py`, and `test_jokers.py::test_full_game_round_trip_with_persistent_when_joker` — these are the known fragile downstream sites as of 2026-05-10. Re-probe + extend this list when the next deck-rebalance candidate fails on a new test."
 
 Per-project candidate for a `tests/seed_dependency_index.md` doc: maintain a small index of "tests fragile to deck composition" so workers and orchestrator have a single page to consult before deck changes. Promote to global protocol if the same pattern surfaces in another project (rng-consumption-order fragility is generic across any deterministic engine).
+
+---
+
+---
+date: 2026-05-11
+ticket-context: RUL-56, RUL-62, ADR-0007
+template-worthy: yes
+---
+
+## What happened
+
+RUL-62 shipped ADR-0007 locking SHOP payload semantics (shape 2 = card-buy) with a 7-card M2.5 starter table at prices 5/7/6/6/10/9/12. RUL-56's first worker realised the data per the ADR exactly, ran the M2 watchable smoke, and found winners dropped from 6/10 to 4/10 — a balance regression. The worker correctly stop-conditioned per the original RUL-56 hard constraint ("do not silently lower the floor") and recommended (a) authorise floor bump 7→4, (b) ADR-amend for in-PR tuning, or (c) revert + balance ticket. The worker's analysis explicitly said path (b) "would be exactly the silent-balancing pattern the hard constraint forbids without an ADR amendment".
+
+The orchestrator caught that ADR-0007 §"Pricing rationale" already contained the explicit authorisation: "RUL-56 may tune individual prices against M2 watchable-smoke winner-emergence data; the ADR fixes the *shape* and the *range*, not per-card specifics." No ADR amendment was needed — RUL-56 could tune within the 5-12 range as a normal in-PR activity. The orchestrator re-dispatched with path (b) authorisation citing the clause; the second worker tuned 5/7/6/6/10/9/12 → 10/12/11/11/11/11/12 (still within band, gates the "cheapest first" bot heuristic), held the 6/10 post-RUL-61 floor with the identical winner set, and shipped (PR #64).
+
+## Root cause
+
+The worker followed the hand-over and the original RUL-56 ticket body but didn't read ADR-0007 with enough granularity to find the tuning clause. The hand-over had said "data-only path"; the worker took that as "no tuning allowed" rather than "no engine-code changes allowed". The hand-over could have surfaced ADR-0007's tuning clause explicitly — instead the orchestrator relied on the worker to find it.
+
+A second factor: the original RUL-56 ticket body (drafted before ADR-0007 existed) contained the "do not silently lower the floor" hard constraint without an "unless ADR authorises tuning" qualifier. When ADR-0007 added the authorisation, the ticket body wasn't updated to reflect it. The worker reasonably treated the ticket-body hard constraint as authoritative.
+
+## Fix in project
+
+- Memory rule candidate: when an ADR includes an explicit authorisation for in-PR activity (price tuning, floor bumps, threshold adjustments), name the clause in the hand-over so the worker doesn't have to discover it. ADR-0007 §"Pricing rationale" is the precedent.
+- The re-dispatch hand-over for RUL-56 cited the clause verbatim and the second worker shipped without ambiguity.
+- Worker hand-back was disciplined and correct given their reading of the constraints — the lesson is upstream of the worker.
+
+## Proposed template change
+
+Two changes worth promoting:
+
+1. **Hand-over template addition**: when a ticket's success criteria involve a balance / threshold / regression check, and an ADR governs the relevant parameter space, the hand-over should quote the ADR's authorisation clauses verbatim. Workers should not need to discover authorisation from the ADR itself — that's the orchestrator's job at dispatch time.
+
+2. **Ticket-body refresh on ADR landing**: when an ADR ratifies after a ticket was filed, the ticket body's hard constraints should be reviewed for stale "do not X" rules that the ADR has since authorised. RUL-56's body wasn't refreshed when ADR-0007 landed (one hour earlier in the same session); the worker correctly treated the stale body as authoritative. The orchestrator's merge-sweep checklist should include "if a sibling ADR shipped in this batch, refresh affected ticket bodies before re-dispatch".
+
+Worth promoting to global `CLAUDE.md`: ADRs that authorise specific in-PR activities should have those authorisations surfaced at hand-over time, not buried in the ADR body. The cost is one extra line in the hand-over; the saving is one stop-condition cycle per occurrence.
