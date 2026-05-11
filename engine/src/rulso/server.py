@@ -4,7 +4,7 @@ One game per process, one human seat per connection, bots (``bots.random``)
 fill the other three seats. Engine is authoritative: every transition that
 mutates ``GameState`` emits a :class:`StateBroadcast`; every client
 :class:`ActionSubmit` is re-validated via
-:func:`bots.random.enumerate_legal_actions` before being applied. ``Pass`` is
+:func:`rulso.legality.enumerate_legal_actions` before being applied. ``Pass`` is
 server-side only (per ADR-0008) — picked automatically when the human's legal
 set is empty, never submitted by clients.
 
@@ -34,14 +34,13 @@ from typing import Any
 import websockets
 from pydantic import TypeAdapter, ValidationError
 
-from rulso.bots.random import (
+from rulso.bots.random import choose_action, select_purchase
+from rulso.legality import (
     DiscardRedraw,
     Pass,
     PlayCard,
     PlayJoker,
-    choose_action,
     enumerate_legal_actions,
-    select_purchase,
 )
 from rulso.protocol import (
     PROTOCOL_VERSION,

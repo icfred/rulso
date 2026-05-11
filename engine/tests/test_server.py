@@ -21,7 +21,7 @@ import pytest
 import websockets
 from pydantic import TypeAdapter
 
-from rulso.bots.random import (
+from rulso.legality import (
     PlayCard,
     enumerate_legal_actions,
 )
