@@ -1,4 +1,4 @@
-_Last updated: 2026-05-11 by orchestrator session — **M2.5 batch 1 SHIPPED**: RUL-57 (bots.md dice rule, PR #59), RUL-60 (MARKED EACH_PLAYER narrowing, PR #60), RUL-62 (ADR-0007 SHOP payload semantics, PR #61). Main at **475 tests passing** (468 prior + 7 new from RUL-60), ruff clean. RUL-61 (status-data completeness) stop-conditioned at watchable-smoke floor drop 7→6/10 — re-dispatching with option (a) authorisation (floor bump). RUL-56 (SHOP content) unblocked by ADR-0007 — dispatchable on data-only path._
+_Last updated: 2026-05-11 by orchestrator session — **M2.5 CLOSED**: RUL-57 (PR #59), RUL-60 (PR #60), RUL-62 (PR #61), RUL-61 (PR #63), RUL-56 (PR #64) — all 5 shipped. Main at **479 tests passing**, ruff clean, deterministic M2 watchable smoke at **6/10 winners** (seeds 0/1/3/5/7/9) with full M2 status vocabulary + active SHOP content. MARKED applies + narrows EACH_PLAYER scope; CHAINED can be cleared; SHOP fires at 10/12/11/11/11/11/12 price gradient. Next gate: **M3 Foundation/Minimal Client** (RUL-58) — substrate-spike-first per ADR-0006._
 
 # Rulso — orchestrator bootstrap
 
@@ -13,8 +13,8 @@ Linear board: https://linear.app/rulso (team `RUL`, projects: Engine / Infra / B
 | RUL-5 | M1: Engine core | 4-bot CLI game runs end-to-end, IF rules resolve, state machine sound | **Done** |
 | RUL-15 | M1.5: Watchable engine | First moment the game is *real* | **Done** (closed 2026-05-10) |
 | RUL-24 | M2: Full card set | Every card type and mechanic from cards.yaml works | **Done** (closed 2026-05-10) — gap-close set tracked as M2.5 below. |
-| _(no parent)_ | **M2.5: Mechanic gaps** (pre-M3 sweep) | Close M2 mechanics that ship in code but not in play | **In flight** — RUL-56 (SHOP content, blocked-by RUL-62), RUL-57 (bots.md drift), RUL-60 (MARKED consumer), RUL-61 (status-data completeness), RUL-62 (SHOP payload-type spike). Tracked as `parent = RUL-24` follow-ups, not a separate Linear milestone. |
-| RUL-58 | **M3: Foundation/Minimal Client** | Human can read the board, make a meaningful decision, reach a winner | **Backlog** — opens after M2.5 closes. Substrate-spike-first per ADR-0006. |
+| _(no parent)_ | **M2.5: Mechanic gaps** (pre-M3 sweep) | Close M2 mechanics that ship in code but not in play | **Done** (closed 2026-05-11) — RUL-57/60/62 in batch 1 + RUL-61/56 in batch 2. All 5 shipped; M2.5 follow-ups under RUL-24 cleared. |
+| RUL-58 | **M3: Foundation/Minimal Client** | Human can read the board, make a meaningful decision, reach a winner | **Backlog (next gate)** — Substrate-spike-first per ADR-0006. WS protocol shape spike opens M3. |
 | RUL-59 | **M4: Smart bot (ISMCTS)** | ISMCTS surfaces real design feedback in solo play | **Backlog** — blocked-by RUL-58; payoff design draws on M3 playtest signal. |
 | RUL-23 | Meta — orchestrator-authored cross-cutting commits | Permanent home for orchestrator commits | Permanent In Progress |
 
@@ -32,33 +32,43 @@ Foundation Client DoD bar is "ugly but playable": engine WS protocol + server, c
 
 ## In flight
 
-**M2.5 batch 1 SHIPPED (2026-05-11, PRs #59/#60/#61)** — 3 of 5 closed in one parallel sweep:
+**Nothing in flight. M2.5 is closed.**
+
+### M2.5 ship summary (2026-05-11, PRs #59/#60/#61/#63/#64)
+
+Batch 1 (parallel fan, dispatched and merged in same session):
 
 | Ticket | PR | Notes |
 |---|---|---|
-| RUL-57 | #59 | `docs/engine/bots.md` PlayCard rules: replaced stale "two entries: dice=1 and dice=2" line with the ADR-0002 split (OP-only → single `dice=2` entry; M1.5 baked-N legacy → dual entries; `dice` ignored downstream when baked-N is present). Doc-only. |
-| RUL-60 | #60 | `effects.resolve_if_rule` iterative branch (`engine/src/rulso/effects.py`) intersects `scoped` with MARKED holders when ≥1 hold MARKED; falls back to unchanged scope at 0. ANYONE / singular SUBJECTs unaffected. 7 new tests in `test_effects_marked_scope.py` (multi-/single-MARKED narrow; HAS-fails; 0-MARKED fallback; ANYONE/literal/label-singular ignore MARKED). 475/475 pass. |
-| RUL-62 | #61 | `docs/decisions/ADR-0007-shop-payload-semantics.md` locks **shape 2** (card-buy via existing `_ShopEntry.payload_type` route). RUL-51 substrate already committed this path — RUL-56 ships data-only. M2.5 starter table proposed: 7 offers, prices 5–12, composition 2 SUBJECT / 2 MODIFIER / 3 JOKER; every identifier cross-referenced against engine (`labels.LABEL_NAMES`, `_OP_ONLY_COMPARATOR_NAMES`, `_JOKER_VARIANTS`). |
+| RUL-57 | #59 | `docs/engine/bots.md` PlayCard rules: replaced stale "two entries: dice=1 and dice=2" line with the ADR-0002 split (OP-only → single `dice=2` entry; M1.5 baked-N legacy → dual entries). Doc-only. |
+| RUL-60 | #60 | `effects.resolve_if_rule` iterative branch intersects `scoped` with MARKED holders when ≥1 hold MARKED; falls back to unchanged scope at 0. ANYONE / singular SUBJECTs unaffected. 7 new tests in `test_effects_marked_scope.py`. |
+| RUL-62 | #61 | ADR-0007 locks **shape 2** (card-buy via existing `_ShopEntry.payload_type` route). 7-offer M2.5 starter table proposed. Every identifier cross-referenced against engine. |
 
-**M2.5 batch 2 — in flight**:
+Batch 2 (sequential, ordered to avoid baseline-rebase thrash):
 
-| Ticket | Status | Notes |
+| Ticket | PR | Notes |
 |---|---|---|
-| RUL-61 | Stop-conditioned (worktree WIP at bf734e4) | Status data completeness. Worker shipped YAML + tests at bf734e4 (named canaries green), but the `effect_cards:` 1:1 mapping to `effect_deck` lifts deck depth 12 → 14, shifting recycle timing past round 13. M2 watchable smoke drops 7/10 → 6/10. Worker correctly stop-conditioned (workers don't bump smoke floors unilaterally). **Re-dispatching with option (a)**: orchestrator authorises floor bump 7 → 6 + rationale-comment update to reflect ADR-0006 reorder (the existing "next move = M3 ISMCTS" comment is wrong post-reorder). |
-| RUL-56 | Todo (unblocked by RUL-62) | SHOP content: populate `cards.yaml shop_cards:` per ADR-0007's 7-card starter table. Pure data ticket; zero engine code change. Dispatchable now. |
+| RUL-61 | #63 | Status-data completeness: `eff.marked.apply` + `eff.chained.clear` appended at head of `cards.yaml effect_cards:` (preserves seed-0 first-12-pops byte-equality). Floor 7 → 6 ratified — full M2 status vocabulary live; seed 4 flipped to cap-hit (deck depth 12 → 14 shifts recycle timing). `docs/engine/m2-smoke.md` re-baselined to winners 0/1/3/5/7/9. First worker stop-conditioned correctly (workers don't bump smoke floors unilaterally); orchestrator authorised option (a) on re-dispatch. |
+| RUL-56 | #64 | SHOP content: 7-offer pool per ADR-0007 with **price-tuned** gradient `10/12/11/11/11/11/12` (within ADR-0007's 5-12 range; tuning explicitly authorised by ADR-0007 §"Pricing rationale"). Un-tuned ADR-0007 prices yielded 4/10 winners; tuning held the 6/10 post-RUL-61 floor with the identical winner set (0/1/3/5/7/9). First worker stop-conditioned correctly when un-tuned prices dropped the floor; orchestrator authorised option (b) — price tune within band, not floor bump. Mechanism: `bots.random.select_purchase` is "cheapest-affordable, ties by lowest index"; tight 10-12 band keeps every offer rarely affordable in rounds 3/6 after BURN + 5-chip discards. |
 
-Main: **468 tests passing**, ruff clean. Deterministic M2 watchable smoke at 7/10 winners (seeds 0/1/3/4/5/7/9 win; 2/6/8 cap-hit) on PLAY_BIAS=0.75.
+**Cross-cutting fixes landed via this RUL-23 sweep**:
 
-## Audit findings — what's actually wired vs what isn't (2026-05-10)
+- `docs/engine/readme.md`: test_shop.py + test_m2_watchable.py rows extended to cite RUL-56/RUL-61 wiring; `_Last edited:` bumped.
+- `STATUS.md`: M2.5 marked Done; re-anchored to post-M2.5 state.
+- `docs/workflow_lessons.md`: new entry — "ADR's own tuning clause: worker missed the authorisation, orchestrator caught it on the merge sweep" (RUL-56 specifically; template-worthy maybe).
 
-Cross-referenced `engine/src/rulso/{status,effects,goals}.py` against `design/status-tokens.md` and `cards.yaml`:
+Main: **479 tests passing**, ruff clean. Deterministic M2 watchable smoke at **6/10 winners** (seeds 0/1/3/5/7/9 win; 2/4/6/8 cap-hit) on PLAY_BIAS=0.75 with full M2 status vocabulary + active SHOP content.
 
-- **BURN** — apply (`APPLY_BURN`) ✓, clear (`CLEAR_BURN`) ✓, tick (`status.tick_round_start`) ✓, BLESSED interaction ✓, NOUN read (`BURN_TOKENS`) ✓.
-- **MUTE** — apply (`APPLY_MUTE`) ✓, natural decay at `round_start` step 2 ✓, blocks MODIFIER plays in `bots.random._enumerate_plays` ✓.
-- **BLESSED** — apply (`APPLY_BLESSED`) ✓, on-use clear via `consume_blessed_or_else` ✓, integrated at `LOSE_CHIPS` and BURN tick ✓.
-- **MARKED** — apply (`APPLY_MARKED` handler) ✓, natural decay at `resolve` step 10 ✓. **Gaps**: (a) no `eff.marked.apply` in `cards.yaml effect_cards:` → handler never invoked in production; (b) `EACH_PLAYER` scoping at `effects.py:414` ignores MARKED — returns all players regardless. Per `design/status-tokens.md` MARKED should narrow EACH_PLAYER scope to MARKED holders when ≥1 holder.
-- **CHAINED** — apply (`APPLY_CHAINED`) ✓, clear handler (`CLEAR_CHAINED`) ✓, goal-claim eligibility filter at `goals.py:123` ✓, `THE_FREE_AGENT` predicate read ✓. **Gap**: no `eff.chained.clear` in `cards.yaml effect_cards:` → `CLEAR_CHAINED` handler never invoked in production; CHAINED is permanent in the live game.
-- **SHOP substrate** ✓ (RUL-51). **Gap**: empty `shop_cards:` (RUL-56).
+## Audit findings — closed by M2.5 (2026-05-10 audit; closed 2026-05-11)
+
+Cross-referenced `engine/src/rulso/{status,effects,goals}.py` against `design/status-tokens.md` and `cards.yaml`. All gaps closed by M2.5:
+
+- **BURN** — apply (`APPLY_BURN`) ✓, clear (`CLEAR_BURN`) ✓, tick (`status.tick_round_start`) ✓, BLESSED interaction ✓, NOUN read (`BURN_TOKENS`) ✓. _Unchanged._
+- **MUTE** — apply (`APPLY_MUTE`) ✓, natural decay at `round_start` step 2 ✓, blocks MODIFIER plays in `bots.random._enumerate_plays` ✓. _Unchanged._
+- **BLESSED** — apply (`APPLY_BLESSED`) ✓, on-use clear via `consume_blessed_or_else` ✓, integrated at `LOSE_CHIPS` and BURN tick ✓. _Unchanged._
+- **MARKED** — apply (`APPLY_MARKED` handler) ✓, natural decay at `resolve` step 10 ✓, **`eff.marked.apply` in `cards.yaml effect_cards:`** ✓ (RUL-61, PR #63), **EACH_PLAYER scope narrowing** ✓ (RUL-60, PR #60). Decorative-only state closed.
+- **CHAINED** — apply (`APPLY_CHAINED`) ✓, clear handler (`CLEAR_CHAINED`) ✓, **`eff.chained.clear` in `cards.yaml effect_cards:`** ✓ (RUL-61, PR #63), goal-claim eligibility filter at `goals.py:123` ✓, `THE_FREE_AGENT` predicate read ✓. Permanent-state-once-chained closed.
+- **SHOP** substrate ✓ (RUL-51), **content** ✓ (RUL-56, PR #64; 7-offer pool at tuned 10/12/11/11/11/11/12 gradient per ADR-0007). Empty-pool short-circuit closed.
 - **All other M2 mechanics** (WHEN/WHILE lifecycle, JOKER variants, polymorphic NOUN reads, comparator dice, operator MODIFIER fold, all 4 floating labels, goal claims) — wired and consumed.
 
 ## Wave 4 ship summary (2026-05-10, PRs #54/#55/#56)
@@ -163,10 +173,10 @@ M2 Phase 2 SHIPPED (RUL-31 cards/state.py substrate, RUL-32 WHEN+WHILE lifecycle
 
 ## Open judgment calls
 
-- **RUL-56 SHOP payload-type ADR**: SHOP content needs a payload-type decision before dispatch. Three candidate payload shapes flagged in RUL-56's body (chip-buy, card-buy, status-clear); the ADR locks one. Author the ADR in this orchestrator session before opening RUL-56 for dispatch, or punt to a fresh spike. Lean: punt to a focused `RUL-NN: SHOP payload-type spike` ticket — the orchestrator shouldn't author content design decisions in the middle of a milestone reorder.
-- **Canonical legality module**: RUL-52 worker observed `legality.legal_actions` doesn't exist — `bots.random.enumerate_legal_actions` is the de-facto canonical surface. M4 ISMCTS rollouts will consume it; reconsider promoting `enumerate_legal_actions` to `legality.py` when M4 starts. Also relevant for M3: the WS protocol's `action-submit` message envelope may want to reference a canonical action shape that lives outside `bots/random`.
-- **Foundation Client substrate spike scope**: M3 ADR-0006 commits to "WebSocket protocol shape spike + ratification ADR" as the substrate-first entry point. Open question: does the spike output live as one ADR (protocol-envelope shape) or two (envelope shape + state-broadcast cadence)? Defer to the spike worker's hand-back.
-- **Deck-composition fragility extends beyond `_drive_to_first_build`** (RUL-55 Lever B finding): goal-pool shuffle cascade breaks `test_cards_loader` + `test_jokers.test_full_game_round_trip_with_persistent_when_joker` + `test_determinism.test_recycle_path` when the deck reshuffles. Any M2.5 ticket that changes `cards.yaml deck:` (the status-data completeness ticket adds `eff.marked.apply` and `eff.chained.clear` to `effect_deck:` — different deck, but verify) must rebase + run those three test files before merge.
+- **Canonical legality module**: `bots.random.enumerate_legal_actions` is the de-facto canonical surface (RUL-52, exercised by `bots/human`). M4 ISMCTS rollouts will consume it; the M3 WS protocol's `action-submit` envelope will likely want a canonical action shape that lives outside `bots/random`. Promote to `legality.py` when M3 starts? Open.
+- **Foundation Client substrate spike scope**: M3 substrate-first entry per ADR-0006 is "WebSocket protocol shape spike + ratification ADR". Does the spike output live as one ADR (protocol-envelope shape) or two (envelope shape + state-broadcast cadence)? Defer to the spike worker's hand-back.
+- **M2 watchable smoke headroom**: 6/10 floor with one cap-hit of slack (5 winners would breach). Tight but defensible — RUL-55's earlier 7/10 floor was an artifact of half-wired vocabulary (MARKED + CHAINED-clear absent in production; SHOP empty). The post-M2.5 6/10 floor is the honest random-bot ceiling against the full M2 ruleset. Per ADR-0006 the next gate is M3 Foundation Client (human playtest signal) then M4 ISMCTS (smart bot retune). Smoke regression headroom won't grow until M4.
+- **Deck-composition fragility extends beyond `_drive_to_first_build`** (RUL-55 Lever B finding, RUL-61 confirmed): the same fragility hit `effect_cards:` — adding 2 cards lifted deck depth 12 → 14, shifted recycle timing past round 13, dropped the watchable floor 7/10 → 6/10 (one seed flipped). Any future ticket that changes `cards.yaml deck:` OR `cards.yaml effect_cards:` composition must rebase + run `test_cards_loader.py`, `test_jokers.test_full_game_round_trip_with_persistent_when_joker`, `test_determinism.test_recycle_path` before merge — and expect a watchable-smoke re-baseline.
 
 ## Phase 3 prep — why RUL-34 landed first
 
