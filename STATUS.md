@@ -1,4 +1,4 @@
-_Last updated: 2026-05-11 by orchestrator session — **M3 FUNCTIONALLY COMPLETE**: RUL-70 (labels-on-wire substrate — `GameState.labels` published canonically; client renderer reads directly; ADR-0001 drift closed) shipped via PR #75; RUL-71 (`rulso --ws` CLI client — single canonical input transport for browser AND CLI) shipped via PR #74. Both PRs disjoint surfaces, merged in sequence with rebase + post-merge test pass on RUL-71 (per the 2026-05-10 cascade lesson — CLEAN ≠ behaviour-correct). Engine **541 + 8 = 549 tests passing**; ruff clean; client typecheck/build clean. M2 watchable smoke 26/26 (well above 6/10 floor). **M3 milestone (RUL-58) closes**: full substrate + browser playability + CLI parity + label drift closed, all 9 sub-issues shipped (RUL-63/64/66/67/68/69/70/71 + RUL-65 supporting refactor). Next milestone: **M4 ISMCTS (RUL-59)** — payoff design now has playtest signal as input per ADR-0006._
+_Last updated: 2026-05-11 by orchestrator session — **M3 + UX REWORK SHIPPED**: post-M3 client UX rethink (RUL-72) shipped via PR #76 — 7 panels (header, transcript, you, rule, goals, opponents, actions) + state-diff narration + click-toggle discard UI + named plays + round-transition rule snapshots + VP attribution + seat-relative "You" rendering + EFFECT inline rendering. **First real playtest signal from the user** (in orchestrator chat): (i) game length is too short for learning curve at VP_TO_WIN=3 — bump to 5; (ii) `eff.noop` in the effect deck produces "wasted round" feeling — swap (don't shrink). Engine 549 tests; M2 watchable 26/26. Next dispatchable: **RUL-73 design tuning** (VP_TO_WIN 3→5 + NOOP swap; engine + data, parallel-safe with anything client-side)._
 
 # Rulso — orchestrator bootstrap
 
@@ -32,7 +32,32 @@ Foundation Client DoD bar is "ugly but playable": engine WS protocol + server, c
 
 ## In flight
 
-**Nothing in flight. M3 closed.** RUL-58 fully shipped (9 sub-issues across the M3 fan). Single canonical input transport for human play across browser AND CLI; engine state published canonically including the floating-label registry; decision-support text rendered. Browser at `:5173` plays through to END; CLI at `rulso --ws --human-seat 0` connects to `rulso-server` and plays the same loop via TTY. Next milestone: **M4 ISMCTS (RUL-59)** — backlog parent already exists; ready to scope. Per ADR-0006, payoff design now draws on M3 playtest signal as input. Recommend the user actually playtest a few games via `rulso-server` + browser before opening the M4 scoping ticket.
+**Nothing in flight.** M3 closed (RUL-58 Done) + UX rework shipped (RUL-72 PR #76). User playtested in browser; surfaced two design-feel issues that block further playtest:
+
+1. **Game too short for learning curve at VP_TO_WIN=3** — first to 3 VP wins lands in 5-10 rounds; user couldn't form a coherent opinion before games ended. Bumping to 5.
+2. **`eff.noop` produces "wasted round" feeling** — when the round's revealed effect is NOOP, players invest cards into rule completion for no payoff. Swap (preserve deck depth at 12 — minimises fragility blast).
+
+User also raised a broader retrospective: "I don't know if we have gone about this the right way." Honest take: substrate-first was correct (engine + protocol are clean) but UI iteration was deferred until very late, compressing all playtest signal into the last 24 hours of M3. Faster path would have been a deliberately-uglier client at RUL-66 (just print state, no panels) so design feedback came at week-1 speed. Trade-off was real; substrate-clarity won, playtest-velocity lost. **The good news: substrate is clean now, so design iteration from here is fast — each tuning ticket is a 1-line constant or a `cards.yaml` edit.**
+
+### RUL-72 ship summary (2026-05-11, PR #76)
+
+7-panel UX rework + state-diff narration. Multiple iteration rounds in same PR:
+
+- **v1**: header, transcript (basic diff narration), you panel + hand list, enriched rule preview, enriched goals, opponents, action grouping with click-toggle discard UI
+- **v2 (re-dispatch)**: named plays via slot-fill diff, round-transition rule snapshots ("Round N rule [X] resolved → Y" → "--- Round N+1 starts. New rule: Z ---"), VP attribution (goal claim vs rule effect heuristic), drop card_id leak, seat-relative "You" rendering
+- **v3 (orchestrator-pushed fix)**: render `state.revealed_effect` inline in the EFFECT slot position — `[EFFECT: ?]` was a UI bug (worker hardcoded for "visual symmetry"), users predictably misread as "no card here". Now `[EFFECT: <effect text>]` inline; `?` only pre-reveal
+
+Worker shipped with caveats: diff narration is heuristic (`?`-prefixes ambiguous attributions); JOKER chain effects keep simple "Effect: <text>" text without chain expansion; goal-progress derivation skipped for predicates needing engine help. None blocking further playtest.
+
+### Open follow-ups post-RUL-72
+
+- **RUL-73 (filing this turn)**: VP_TO_WIN 3→5 + `eff.noop` swap (preserve deck depth). Engine + data ticket; parallel-safe with anything client-side
+- **NOOP frequency design discussion**: removing NOOP entirely is one path; reducing-but-keeping is another. RUL-73 takes the simplest fix (swap one card); broader effect-deck rebalance is a separate conversation
+- **`_OP_ONLY_COMPARATOR_NAMES` duplication** — open follow-up; not blocking
+- **TS type-gen `state.py` coverage** — extend `scripts/regenerate-types.sh` if M4 needs richer state types
+- **`npm run lint` cwd-config quirk** — trivial follow-up
+- **`bots/human._describe_action` cross-module private import** (RUL-71) — extract shared helper if/when third consumer arrives
+- **M4 scoping (RUL-59)** — open after a few playtest sessions on the post-RUL-73 game tuning
 
 ### RUL-70 + RUL-71 ship summary (2026-05-11, PRs #75 / #74)
 
