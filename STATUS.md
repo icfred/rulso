@@ -1,4 +1,4 @@
-_Last updated: 2026-05-11 by orchestrator session — **M3 CLIENT BOOTSTRAP LIVE**: RUL-66 (Vite + Pixi v8 + TS scaffold; WS client; `pydantic2ts` + `json-schema-to-typescript` type-gen pipeline; hand-curated discriminated unions for `TypeAdapter` aliases; `biome.json` at repo root for hook + npm convergence) shipped via PR #70. Read-only client; END-state rendering deferred to next M3 sub-issue (input + minimal control). Workflow lesson captured: ticket-author rule — DoD bullets that need out-of-scope actions to reach the verification state are unsatisfiable by construction; either fold the surface into scope or move the bullet to the consuming ticket. Next M3 dispatchable: client input + minimal control (submit `ActionSubmit` for the human seat — covers END-state rendering as a side-effect)._
+_Last updated: 2026-05-11 by orchestrator session — **M3 HUMAN-SEAT LOOP CLOSED**: RUL-67 (`StateBroadcast.legal_actions` additive field publishes the human's legal set; client renders buttons; click → `ActionSubmit`; game reaches END through the human seat) shipped via PR #71. Worker's scripted ws-client smoke confirmed 159 broadcasts, 24 human turns all carrying `legal_actions`, terminal carrying None, `phase=END` reached. Engine 513 tests passing; client typecheck/lint/build clean. Closes the deferred RUL-66 END-state rendering DoD bullet. **DiscardRedraw placeholder bites now**: clicking a discard button advances the turn without decrementing chips or redrawing — server's `pass_turn` placeholder mirrors `cli._drive_build_turn`. Next dispatchable: parallel fan of (a) server-side discard pipeline + (b) client decision-support rendering._
 
 # Rulso — orchestrator bootstrap
 
@@ -14,7 +14,7 @@ Linear board: https://linear.app/rulso (team `RUL`, projects: Engine / Infra / B
 | RUL-15 | M1.5: Watchable engine | First moment the game is *real* | **Done** (closed 2026-05-10) |
 | RUL-24 | M2: Full card set | Every card type and mechanic from cards.yaml works | **Done** (closed 2026-05-10) — gap-close set tracked as M2.5 below. |
 | _(no parent)_ | **M2.5: Mechanic gaps** (pre-M3 sweep) | Close M2 mechanics that ship in code but not in play | **Done** (closed 2026-05-11) — RUL-57/60/62 in batch 1 + RUL-61/56 in batch 2. All 5 shipped; M2.5 follow-ups under RUL-24 cleared. |
-| RUL-58 | **M3: Foundation/Minimal Client** | Human can read the board, make a meaningful decision, reach a winner | **In Progress (opened 2026-05-11)** — Engine side complete (RUL-63 envelope PR #66, RUL-64 server PR #69) + client bootstrap live (RUL-66 PR #70). Next dispatchable sub-issue: client input + minimal control (`ActionSubmit` for human seat). Then in sequence: decision-support rendering, polish, finally re-wire `bots/human` TTY through the WS. |
+| RUL-58 | **M3: Foundation/Minimal Client** | Human can read the board, make a meaningful decision, reach a winner | **In Progress (opened 2026-05-11)** — Substrate complete (RUL-63 envelope, RUL-64 server, RUL-66 client bootstrap, RUL-67 human-seat input loop closed). Next dispatchable: parallel fan of (a) server-side `DiscardRedraw` pipeline (visible bug now that humans can click discard) + (b) client decision-support rendering (card text, rule preview, goals visible, opponents' public state). Final M3 sub-issue: re-wire `bots/human` TTY through the WS. |
 | RUL-59 | **M4: Smart bot (ISMCTS)** | ISMCTS surfaces real design feedback in solo play | **Backlog** — blocked-by RUL-58; payoff design draws on M3 playtest signal. |
 | RUL-23 | Meta — orchestrator-authored cross-cutting commits | Permanent home for orchestrator commits | Permanent In Progress |
 
@@ -32,7 +32,36 @@ Foundation Client DoD bar is "ugly but playable": engine WS protocol + server, c
 
 ## In flight
 
-**Nothing in flight.** RUL-58 M3 engine + client bootstrap fully shipped (RUL-63 envelope, RUL-64 server, RUL-66 client). Next dispatchable: client input + minimal control — wire `ActionSubmit` from the UI for the human seat (single button per legal action is enough; richer rendering follows). Covers the deferred RUL-66 DoD bullet (END-state rendering) as a side-effect, since input unblocks the engine's game loop past the human seat's BUILD turn. Then in sequence: decision-support rendering (full card text, semantic rule preview, goals visible, opponents' public state), then re-wire `bots/human` TTY through the WS (per RUL-64's "Out of scope" — final M3 sub-issue).
+**Nothing in flight.** RUL-58 M3 substrate + input loop fully shipped (RUL-63 envelope, RUL-64 server, RUL-66 client bootstrap, RUL-67 human-seat input loop). The browser is now a playable seat: legal-action buttons render on every human BUILD broadcast, click → `ActionSubmit`, game reaches END through the human. Next dispatchable: **parallel fan** of two sub-issues — (a) server-side `DiscardRedraw` pipeline (engine-side; closes a now-visible placeholder bug); (b) client decision-support rendering (client-side; replaces JSON-stringified button labels with human-readable card text + rule preview). Touch surfaces are disjoint (engine vs client) — true parallel-safe. Final M3 sub-issue once both land: re-wire `bots/human` TTY through the WS so the same human-seat surface drives both browser and CLI playtest paths.
+
+### RUL-67 ship summary (2026-05-11, PR #71)
+
+| Decision | Locked | Rationale |
+|---|---|---|
+| Protocol extension | Additive `legal_actions: tuple[ClientAction, ...] \| None = None` on `StateBroadcast`; `PROTOCOL_VERSION` unchanged at `1` | ADR-0008 §Consequences pre-authorises additive variants — no version bump, no parser break for clients that ignore the field |
+| Server population semantics | `_build_state_broadcast(state, human_seat)` helper threaded through every emit path; populates `legal_actions = tuple(enumerate_legal_actions(state, players[human_seat]))` only when `phase=BUILD AND active_seat==human_seat`; None otherwise | Re-uses the existing `enumerate_legal_actions` call (same one the server uses for `ILLEGAL_ACTION` validation) — no new enumeration surface, no drift risk. None on bot turns means client UI doesn't render stale buttons |
+| Client UX | One button per legal action; label = `JSON.stringify(action)`; click → `ActionSubmit` + "OUTGOING" pre-block; submit-once safeguard disables peer buttons on click; buttons rebuild on every `StateBroadcast` (clear on bot turns); `ErrorEnvelope` does NOT clear the buttons (the human's turn is still in play until the next `StateBroadcast`) | Minimal viable input — JSON labels are playable but not friendly (decision-support text is the next sub-issue). Submit-once safeguard prevents double-fire on impatient double-click. Not-clearing-on-error preserves retry semantics |
+| Smoke evidence | Worker ran a scripted ws-client driver (not a real browser): `broadcasts=159 human_turns=24 carrying_legal=24 end_seen=True end_legal_actions=None` | Same engine/client envelope contract end-to-end via the actual generated shapes; equivalent to a manual click-through. Worker provided incantations for a real-browser run if desired |
+
+**Worker hand-back flags addressed**:
+
+- **`DiscardRedraw` placeholder preserved**: server's `_apply_action` still treats `DiscardRedraw` as `pass_turn` (mirrors `cli._drive_build_turn`). Worker took the explicit "otherwise leave the placeholder" branch from the hand-over stop condition — clicking a discard button advances the turn without decrementing chips or redrawing cards. **Follow-up filed below** as a now-visible bug; was registered in earlier sweeps as "wait for client-side discard surface to be specced", which has now arrived
+- Browser-driven smoke skipped in favour of scripted ws driver: scripted run exercises identical envelope shapes; equivalent verification. No follow-up
+- `npm run lint` from inside `client/` has a pre-existing config-path quirk (worker noted, not introduced by this PR). The pre-commit hook from repo root is clean. **Follow-up note**: investigate the cwd-quirk separately if it bites another contributor
+
+**Cross-cutting fixes landed via this RUL-23 sweep**:
+
+- `docs/engine/readme.md`: `_Last edited:` bumped; `protocol.py` row notes the additive `legal_actions` field + PROTOCOL_VERSION-unchanged invariant; `server.py` row notes the `_build_state_broadcast` helper + the BUILD-phase + active-seat guard; `test_server.py` row extended with the new coverage
+- `docs/client/readme.md`: `_Last edited:` bumped; `main.ts` row notes the button rendering + submit-once safeguard + ErrorEnvelope-doesn't-clear semantics; `net.ts` row notes the new `send` export; smoke section now describes the closed loop + the two open caveats (DiscardRedraw placeholder; JSON-stringified labels pending decision-support text)
+- STATUS.md re-anchored to post-RUL-67 (this entry)
+
+### Open follow-ups post-RUL-67
+
+- **Server-side `DiscardRedraw` pipeline** (NOW VISIBLE BUG, not just a placeholder): clicking a discard button on the human seat advances the turn without decrementing chips or replacing cards. Engine-side scope: extend `server._apply_action` (or `cli._drive_build_turn`'s shared helper if extracted) to actually execute the discard via `cards.deal_replacements` (or the equivalent), decrement chips by `len(card_ids) * DISCARD_COST`, broadcast the result. Test that round-trips `DiscardRedraw` end-to-end. **Filing as next dispatchable.**
+- **Client decision-support rendering** (M3 fan sibling): replace JSON-stringified button labels with human-readable card text + semantic rule preview ("Play THE LEADER → SUBJECT slot"); render goal cards face-up; opponents' chips/VP/status tokens visible. Touch surface: client-side only (`main.ts` rendering helpers + theme constants). Parallel-safe with the discard pipeline. **Filing as next dispatchable.**
+- **`_OP_ONLY_COMPARATOR_NAMES` duplication** between `cli.py` and `server.py` — promote to `legality.py` or `effects.py`. Low priority parallel-safe one-PR refactor; not blocking
+- **TS type-gen `state.py` coverage** carried forward from RUL-66 — extend `scripts/regenerate-types.sh` to introspect `rulso.state` if rendering needs richer state types directly (vs unwrapping `StateBroadcast.state`); not a blocker
+- **`npm run lint` cwd quirk** (RUL-67 worker note) — investigate separately if another contributor bumps it
 
 ### RUL-66 ship summary (2026-05-11, PR #70)
 
