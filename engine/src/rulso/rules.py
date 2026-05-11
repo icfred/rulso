@@ -40,6 +40,7 @@ from rulso import effects, goals, labels, legality, persistence, status
 from rulso.cards import ConditionTemplate
 from rulso.state import (
     ACTIVE_GOALS,
+    DISCARD_COST,
     HAND_SIZE,
     PLAYER_COUNT,
     SHOP_INTERVAL,
@@ -571,6 +572,80 @@ def pass_turn(state: GameState) -> GameState:
     return _build_tick(state)
 
 
+def discard_redraw(
+    state: GameState,
+    player_id: str,
+    card_ids: tuple[str, ...],
+    *,
+    refill_rng: random.Random | None = None,
+) -> GameState:
+    """Active player spends chips to discard ``card_ids`` and redraw N replacements.
+
+    Per ``design/state.md`` BUILD phase: a player may discard 1..3 cards at the
+    cost of :data:`DISCARD_COST` chips each, then immediately draw the same
+    number of replacements from ``state.deck``. The discard pile receives the
+    spent cards; when the deck exhausts mid-draw, ``state.discard`` is
+    reshuffled back into the deck via ``refill_rng`` — same shape as
+    :func:`_refill_hands` (RUL-54 conditional-substrate rule).
+
+    Mutations:
+
+    * Remove ``card_ids`` (in order) from the active player's hand.
+    * Append the removed cards to ``state.discard``.
+    * Deduct ``len(card_ids) * DISCARD_COST`` chips from the active player.
+    * Draw ``len(card_ids)`` cards from ``state.deck`` (recycle when empty)
+      and append them to the hand.
+    * Advance the build turn via :func:`_build_tick`.
+
+    Raises ``ValueError`` on: non-BUILD phase, out-of-turn caller, empty
+    ``card_ids``, unknown card (by id) in the active player's hand, or
+    insufficient chips. ``refill_rng=None`` is tolerated only when the deck
+    has enough cards to satisfy the draw without recycling.
+    """
+    if state.phase is not Phase.BUILD:
+        raise ValueError(f"discard_redraw requires phase=BUILD, got {state.phase}")
+    active_player = state.players[state.active_seat]
+    if active_player.id != player_id:
+        raise ValueError(
+            f"discard_redraw out-of-turn: active player is {active_player.id!r}, not {player_id!r}"
+        )
+    if not card_ids:
+        raise ValueError("discard_redraw requires at least one card_id")
+    cost = len(card_ids) * DISCARD_COST
+    if active_player.chips < cost:
+        raise ValueError(
+            f"player {player_id!r} cannot afford discard (chips={active_player.chips}, cost={cost})"
+        )
+    hand = active_player.hand
+    discarded: list[Card] = []
+    for cid in card_ids:
+        idx = next((i for i, c in enumerate(hand) if c.id == cid), None)
+        if idx is None:
+            raise ValueError(f"card {cid!r} not in {player_id!r} hand")
+        discarded.append(hand[idx])
+        hand = hand[:idx] + hand[idx + 1 :]
+    new_discard = state.discard + tuple(discarded)
+    drawn, new_deck, new_discard = _draw_n(state.deck, new_discard, len(card_ids), refill_rng)
+    new_player = active_player.model_copy(
+        update={
+            "chips": active_player.chips - cost,
+            "hand": hand + drawn,
+        }
+    )
+    new_players = (
+        state.players[: state.active_seat] + (new_player,) + state.players[state.active_seat + 1 :]
+    )
+    return _build_tick(
+        state.model_copy(
+            update={
+                "players": new_players,
+                "deck": new_deck,
+                "discard": new_discard,
+            }
+        )
+    )
+
+
 def play_joker(state: GameState, card: Card) -> GameState:
     """Active player attaches ``card`` (a JOKER) to the active rule (RUL-45).
 
@@ -704,6 +779,37 @@ def _draw_shop_offers(
             discard_list = []
         drawn.append(pool_list.pop())
     return tuple(drawn), tuple(pool_list), tuple(discard_list)
+
+
+def _draw_n(
+    deck: tuple[Card, ...],
+    discard: tuple[Card, ...],
+    n: int,
+    rng: random.Random | None,
+) -> tuple[tuple[Card, ...], tuple[Card, ...], tuple[Card, ...]]:
+    """Draw ``n`` cards from ``deck``; recycle ``discard`` when the deck empties.
+
+    Returns ``(drawn, new_deck, new_discard)``. When both piles are empty mid-
+    draw, returns fewer than ``n`` cards rather than raising. The recycle
+    shuffles ``discard`` into the deck via ``rng`` and resets the discard —
+    mirrors :func:`_refill_hands`'s recycle so seeded games stay reproducible.
+    ``rng=None`` is tolerated when the recycle does not trigger; reaching it
+    without one raises ``ValueError`` (RUL-54 conditional-substrate rule).
+    """
+    deck_list = list(deck)
+    discard_list = list(discard)
+    drawn: list[Card] = []
+    while len(drawn) < n:
+        if not deck_list:
+            if not discard_list:
+                break
+            if rng is None:
+                raise ValueError("seeded rng required to recycle discard into deck")
+            deck_list = discard_list
+            rng.shuffle(deck_list)
+            discard_list = []
+        drawn.append(deck_list.pop())
+    return tuple(drawn), tuple(deck_list), tuple(discard_list)
 
 
 def _refill_hands(state: GameState, rng: random.Random | None) -> GameState:
