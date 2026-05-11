@@ -1,4 +1,4 @@
-_Last edited: 2026-05-10 by RUL-23 (sweep batching Wave 4: RUL-51 SHOP + RUL-53 bots-docs + RUL-55 polish — closes M2)_
+_Last edited: 2026-05-11 by RUL-23 (M2.5 sweep batch 1: RUL-57 bots.md dice rule + RUL-60 MARKED consumer + RUL-62 ADR-0007 SHOP payload semantics)_
 
 # engine
 
@@ -13,7 +13,7 @@ Python 3.12 package. `uv` managed. Pydantic v2 state, asyncio + `websockets` ser
 | `engine/src/rulso/state.py` | live | frozen pydantic models + constants — see [state-models.md](state-models.md) |
 | `engine/src/rulso/rules.py` | live | round flow phase machine + SHOP phase wiring (RUL-51): `enter_round_start` step-5 SHOP check, `complete_shop`, `apply_shop_purchase`, `shop_purchase_order` — see [round-flow.md](round-flow.md) |
 | `engine/src/rulso/grammar.py` | live | IF rule grammar (M1: SUBJECT/QUANT/NOUN) — see [if-resolver.md](if-resolver.md) |
-| `engine/src/rulso/effects.py` | live | IF rule resolver + revealed-effect dispatcher (RUL-39 D), comparator-dice (RUL-42 G), op-modifier fold (RUL-43 H), polymorphic NOUN reads (RUL-44 I), ANYONE/EACH scoping (RUL-41 F) — see [if-resolver.md](if-resolver.md) |
+| `engine/src/rulso/effects.py` | live | IF rule resolver + revealed-effect dispatcher (RUL-39 D), comparator-dice (RUL-42 G), op-modifier fold (RUL-43 H), polymorphic NOUN reads (RUL-44 I), ANYONE/EACH scoping (RUL-41 F), MARKED narrows EACH_PLAYER (RUL-60 M2.5) — see [if-resolver.md](if-resolver.md) |
 | `engine/src/rulso/cli.py` | live | round-by-round CLI runner — see [cli.md](cli.md) |
 | `engine/src/rulso/labels.py` | live | LEADER/WOUNDED (M1.5) + GENEROUS/CURSED (M2 RUL-33); MARKED/CHAINED stay empty pending status-apply ticket — see [labels.md](labels.md) |
 | `engine/src/rulso/cards.py` | live | yaml loader + deck builder. Covers M1.5 + M2 vocabulary (CardType.EFFECT, GoalCard, scope_mode) plus SHOP offers (RUL-51 `_ShopEntry`, `load_shop_offers`); reads `design/cards.yaml` |
@@ -44,6 +44,7 @@ Python 3.12 package. `uv` managed. Pydantic v2 state, asyncio + `websockets` ser
 | `engine/tests/test_effects_comparator.py` | live | OP-only comparator dice (RUL-42 G, ADR-0002): 1d6/2d6 player choice, LT/LE/GT/GE/EQ |
 | `engine/tests/test_effects_op_modifiers.py` | live | operator MODIFIER fold (RUL-43 H, ADR-0004): BUT/AND/OR set-ops on SUBJECT, MORE_THAN/AT_LEAST flip QUANT strictness |
 | `engine/tests/test_effects_scope.py` | live | ANYONE / EACH_PLAYER scoping (RUL-41 F, ADR-0003): existential subset-fire-once, iterative per-player loop |
+| `engine/tests/test_effects_marked_scope.py` | live | MARKED narrows EACH_PLAYER scope (RUL-60, M2.5): ≥1 MARKED → narrow; 0 MARKED → fall back to all; ANYONE / singular SUBJECTs unaffected — see [status.md](status.md) |
 | `engine/tests/test_status.py` | live | status apply/decay (RUL-40 E): per-token matrix, round-start BURN tick, MUTE clear, `consume_blessed_or_else` primitive — see [status.md](status.md) |
 | `engine/tests/test_goals.py` | live | goal-claim engine (RUL-46 K): predicate registry, single-claim discard + replenish, renewable persist |
 | `engine/tests/test_jokers.py` | live | JOKER attachment (RUL-45 J): PERSIST_WHEN/WHILE promote, ECHO conditional one-shot WHEN, DOUBLE effect doubling |
