@@ -1,4 +1,4 @@
-_Last updated: 2026-05-10 by orchestrator session — **Milestone reorder accepted (ADR-0006)**: Foundation/Minimal Client becomes M3 (was M4); ISMCTS becomes M4 (was M3). Pre-M3 sweep "M2.5 — Mechanic gaps" gap-closes SHOP content, MARKED consumer wiring, and status-data completeness. Main at 468 tests, ruff clean. CLI human-seat (RUL-52) confirmed unplayable for design signal — drove the reorder._
+_Last updated: 2026-05-11 by orchestrator session — **M2.5 batch 1 SHIPPED**: RUL-57 (bots.md dice rule, PR #59), RUL-60 (MARKED EACH_PLAYER narrowing, PR #60), RUL-62 (ADR-0007 SHOP payload semantics, PR #61). Main at **475 tests passing** (468 prior + 7 new from RUL-60), ruff clean. RUL-61 (status-data completeness) stop-conditioned at watchable-smoke floor drop 7→6/10 — re-dispatching with option (a) authorisation (floor bump). RUL-56 (SHOP content) unblocked by ADR-0007 — dispatchable on data-only path._
 
 # Rulso — orchestrator bootstrap
 
@@ -32,15 +32,20 @@ Foundation Client DoD bar is "ugly but playable": engine WS protocol + server, c
 
 ## In flight
 
-**M2.5 — Mechanic gaps (pre-M3 sweep).** Three engine/data gaps + one design spike + one docs chore:
+**M2.5 batch 1 SHIPPED (2026-05-11, PRs #59/#60/#61)** — 3 of 5 closed in one parallel sweep:
+
+| Ticket | PR | Notes |
+|---|---|---|
+| RUL-57 | #59 | `docs/engine/bots.md` PlayCard rules: replaced stale "two entries: dice=1 and dice=2" line with the ADR-0002 split (OP-only → single `dice=2` entry; M1.5 baked-N legacy → dual entries; `dice` ignored downstream when baked-N is present). Doc-only. |
+| RUL-60 | #60 | `effects.resolve_if_rule` iterative branch (`engine/src/rulso/effects.py`) intersects `scoped` with MARKED holders when ≥1 hold MARKED; falls back to unchanged scope at 0. ANYONE / singular SUBJECTs unaffected. 7 new tests in `test_effects_marked_scope.py` (multi-/single-MARKED narrow; HAS-fails; 0-MARKED fallback; ANYONE/literal/label-singular ignore MARKED). 475/475 pass. |
+| RUL-62 | #61 | `docs/decisions/ADR-0007-shop-payload-semantics.md` locks **shape 2** (card-buy via existing `_ShopEntry.payload_type` route). RUL-51 substrate already committed this path — RUL-56 ships data-only. M2.5 starter table proposed: 7 offers, prices 5–12, composition 2 SUBJECT / 2 MODIFIER / 3 JOKER; every identifier cross-referenced against engine (`labels.LABEL_NAMES`, `_OP_ONLY_COMPARATOR_NAMES`, `_JOKER_VARIANTS`). |
+
+**M2.5 batch 2 — in flight**:
 
 | Ticket | Status | Notes |
 |---|---|---|
-| RUL-56 | Backlog (blocked-by RUL-62) | SHOP content: populate `cards.yaml shop_cards:`. Dispatchable post-RUL-62 ADR. |
-| RUL-57 | Todo (parallel-safe) | `docs/engine/bots.md` dice-mode drift: LT/LE/GT/GE/EQ default 2d6 only post-RUL-42. Parallel-safe docs chore. |
-| RUL-60 | Todo (parallel-safe) | MARKED consumer wiring: narrow `EACH_PLAYER` scoping to MARKED holders when ≥1 (per `design/status-tokens.md`); fall back to all-players when 0 holders. Currently `effects.py:414` ignores MARKED entirely for polymorphic SUBJECTs. Engine work. |
-| RUL-61 | Todo (parallel-safe) | Status data completeness: add `eff.marked.apply` and `eff.chained.clear` to `cards.yaml effect_cards:` + `effect_deck:`. Today MARKED is decorative (no card produces it) and CHAINED is one-way (no card clears it). Data-only. |
-| RUL-62 | Todo (parallel-safe) | SHOP payload-type ADR spike. Output: `docs/decisions/ADR-NNNN-shop-payload-semantics.md`. Unblocks RUL-56 for dispatch. Time-boxed; stop-condition if all candidate shapes feel arbitrary. |
+| RUL-61 | Stop-conditioned (worktree WIP at bf734e4) | Status data completeness. Worker shipped YAML + tests at bf734e4 (named canaries green), but the `effect_cards:` 1:1 mapping to `effect_deck` lifts deck depth 12 → 14, shifting recycle timing past round 13. M2 watchable smoke drops 7/10 → 6/10. Worker correctly stop-conditioned (workers don't bump smoke floors unilaterally). **Re-dispatching with option (a)**: orchestrator authorises floor bump 7 → 6 + rationale-comment update to reflect ADR-0006 reorder (the existing "next move = M3 ISMCTS" comment is wrong post-reorder). |
+| RUL-56 | Todo (unblocked by RUL-62) | SHOP content: populate `cards.yaml shop_cards:` per ADR-0007's 7-card starter table. Pure data ticket; zero engine code change. Dispatchable now. |
 
 Main: **468 tests passing**, ruff clean. Deterministic M2 watchable smoke at 7/10 winners (seeds 0/1/3/4/5/7/9 win; 2/6/8 cap-hit) on PLAY_BIAS=0.75.
 
