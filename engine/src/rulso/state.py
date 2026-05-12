@@ -21,7 +21,7 @@ from pydantic import BaseModel, ConfigDict, Field
 PLAYER_COUNT: int = 4
 HAND_SIZE: int = 7
 STARTING_CHIPS: int = 50
-VP_TO_WIN: int = 3
+VP_TO_WIN: int = 5
 ACTIVE_GOALS: int = 3
 SHOP_INTERVAL: int = 3
 MAX_PERSISTENT_RULES: int = 5

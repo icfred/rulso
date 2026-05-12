@@ -189,7 +189,11 @@ def test_double_doubles_for_every_match_in_scope() -> None:
         _player("p2", vp=1, seat=2),
         rule=rule,
     )
-    new = enter_resolve(state)
+    # RUL-73 bumped VP_TO_WIN 3→5; before the bump the +2 doubled effect put
+    # p0/p1 at 4 VP which terminated the game before step 12 (refill). Now the
+    # round continues into refill, which needs a seeded rng to recycle the
+    # discard pile if mid-refill exhaustion occurs.
+    new = enter_resolve(state, rng=random.Random(0))
     # p0 and p1 tie for LEADER (vp=2); each receives the doubled effect.
     assert new.players[0].vp == 4
     assert new.players[1].vp == 4

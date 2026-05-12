@@ -21,7 +21,7 @@ any state passing through; they only observe.
 This pattern is testing-only and reversible. No production module is
 modified by this ticket (RUL-35 hard constraint).
 
-## Empirical baseline (deterministic main post-RUL-56)
+## Empirical baseline (deterministic main post-RUL-73)
 
 Seeds 0..9 at ``rounds=200``:
 
@@ -35,17 +35,14 @@ Seeds 0..9 at ``rounds=200``:
 | effect chip-delta (sweep total)               | ≥1       | 1     |
 
 Winners under the RUL-55 PLAY_BIAS=0.75 heuristic with the RUL-56 SHOP
-content (price gradient 10/12/11/11/11/11/12) active: seeds 0/1/3/5/7/9.
-Cap-hit: seeds 2/4/6/8. Identical winner set to the pre-SHOP RUL-61
-baseline — the RUL-56 price tuning keeps the SHOP transparent to winner
-emergence at the random-bot tier (offers priced 10-12 are rarely
-affordable to bots in rounds 3 / 6 after BURN + discard drain, so the
-substrate exercises but does not divert enough chips to flip seeds).
-Per-seed lifecycle counts shift vs the pre-SHOP baseline because the
-seeded shop-pool shuffle perturbs the seed-0 dealing slightly, but
-aggregate floors hold by orders of magnitude. Below 6/10 fires the next
-polish ticket; the gap between random bots and the full status vocabulary
-is exactly the kind of evidence M4 ISMCTS (ADR-0006) will address.
+content (price gradient 10/12/11/11/11/11/12) active: seeds 1/3/4/5/7/9.
+Cap-hit: seeds 0/2/6/8. Winner set shifted from the post-RUL-56 baseline
+(0/1/3/5/7/9) when RUL-73 bumped ``VP_TO_WIN`` 3→5 — seed 0 now caps out
+because the heuristic can't accumulate 5 VP within the round budget;
+seed 4, which previously hovered near the old threshold, now completes
+within budget. Count holds at 6/10. Below 6/10 fires the next polish
+ticket; the gap between random bots and the full status vocabulary is
+exactly the kind of evidence M4 ISMCTS (ADR-0006) will address.
 
 Lifecycle-coverage floors are pinned at 1 (sweep-aggregate) by design — the
 DoD asks for "at least one … across sweep". The observed counts are orders
@@ -205,13 +202,12 @@ def test_each_seed_reaches_resolve(seed: int, sweep) -> None:
 def test_winners_emerge_across_the_sweep(sweep) -> None:
     """Reclaim the M1.5 watchable bar deferred by RUL-34 during Phase 3.
 
-    Pinned at 6/10 — the deterministic post-RUL-56 baseline (identical
-    winner set to post-RUL-61: seeds 0/1/3/5/7/9). RUL-56 added the M2.5
-    SHOP starter content; the locked price gradient 10/12/11/11/11/11/12
-    keeps SHOP transparent to winner emergence at the random-bot tier.
-    Below 6 means the bot heuristic, deck, or SHOP price band regressed;
-    the gap between random bots and the full vocabulary is what M4 ISMCTS
-    (ADR-0006) addresses.
+    Pinned at 6/10 — the deterministic post-RUL-73 baseline (winners on
+    seeds 1/3/4/5/7/9). RUL-73 bumped ``VP_TO_WIN`` 3→5 and swapped the
+    ``eff.noop`` card for a second ``eff.draw.2``; seed 0 dropped out of
+    the winner set, seed 4 joined it. Below 6 means the bot heuristic,
+    deck, or SHOP price band regressed; the gap between random bots and
+    the full vocabulary is what M4 ISMCTS (ADR-0006) addresses.
     """
     winners = sum(1 for seed in _SEEDS if _is_winner(sweep[seed]["stdout"]))
     assert winners >= _MIN_WINNERS, (

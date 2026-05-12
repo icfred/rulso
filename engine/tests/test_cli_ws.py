@@ -156,11 +156,15 @@ async def test_ws_client_rejects_invalid_input_then_accepts() -> None:
 
 
 async def test_ws_client_reaches_terminal_state_and_exits_clean() -> None:
-    """A fast-terminating seed (0) drives the game to ``phase=end`` and the
+    """A fast-terminating seed (1) drives the game to ``phase=end`` and the
     CLI client returns exit code 0 with the terminal state in its transcript.
+
+    RUL-73 bumped VP_TO_WIN 3→5; seed 0 no longer terminates within the round
+    cap. Seed 1 still wins in ~6 rounds and is the post-RUL-73 fast-termination
+    canary for the WS client.
     """
-    async with _server_running(seed=0, human_seat=0) as port:
-        # Plenty of "0" picks — seed 0 wins under post-RUL-55 baseline.
+    async with _server_running(seed=1, human_seat=0) as port:
+        # Plenty of "0" picks — seed 1 wins under post-RUL-73 baseline.
         stdin = io.StringIO("0\n" * 1000)
         stdout = io.StringIO()
         rc = await asyncio.wait_for(

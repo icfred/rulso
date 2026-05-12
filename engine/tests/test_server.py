@@ -369,8 +369,12 @@ async def test_human_build_broadcasts_carry_legal_actions() -> None:
 
 
 async def test_terminal_state_broadcast_has_no_legal_actions() -> None:
-    """The terminal ``Phase.END`` broadcast carries ``legal_actions = None``."""
-    async with _server_running(seed=0, human_seat=0) as port:
+    """The terminal ``Phase.END`` broadcast carries ``legal_actions = None``.
+
+    Uses seed 1 — under VP_TO_WIN=5 (RUL-73) seed 0 no longer terminates within
+    the 200-round CLI cap; seed 1 still wins in ~6 rounds.
+    """
+    async with _server_running(seed=1, human_seat=0) as port:
         async with websockets.connect(f"ws://127.0.0.1:{port}") as ws:
             await _recv_hello(ws)
             try:
@@ -404,10 +408,11 @@ async def test_end_to_end_game_completes_with_terminal_state_broadcast() -> None
     ``StateBroadcast`` with ``phase=END`` and ``winner`` set, after which the
     server closes the connection (per ADR-0008: no separate end_of_game envelope).
 
-    Uses seed 0 which wins under the post-RUL-55 deterministic baseline.
+    Uses seed 1 — RUL-73 bumped VP_TO_WIN 3→5, after which seed 0 no longer
+    terminates within the round cap. Seed 1 still wins in ~6 rounds.
     """
     terminal: StateBroadcast | None = None
-    async with _server_running(seed=0, human_seat=0) as port:
+    async with _server_running(seed=1, human_seat=0) as port:
         async with websockets.connect(f"ws://127.0.0.1:{port}") as ws:
             await _recv_hello(ws)
             try:

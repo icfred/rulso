@@ -39,7 +39,7 @@ def test_constants_match_design_spec() -> None:
     assert PLAYER_COUNT == 4
     assert HAND_SIZE == 7
     assert STARTING_CHIPS == 50
-    assert VP_TO_WIN == 3
+    assert VP_TO_WIN == 5
     assert ACTIVE_GOALS == 3
     assert SHOP_INTERVAL == 3
     assert MAX_PERSISTENT_RULES == 5
