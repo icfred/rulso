@@ -15,7 +15,7 @@ It does **not** define specific cards (see `cards.yaml`) or grammar render rules
 | `PLAYER_COUNT` | 4 | MVP locks 4; range 3–6 later |
 | `HAND_SIZE` | 7 | mixed pool, no per-type slots |
 | `STARTING_CHIPS` | 50 | |
-| `VP_TO_WIN` | 3 | |
+| `VP_TO_WIN` | 5 | RUL-73 bumped 3→5 after first playtest — 3 VP terminated games in 5-10 rounds before players could form opinions |
 | `ACTIVE_GOALS` | 3 | always face-up |
 | `SHOP_INTERVAL` | 3 | shop runs every N rounds |
 | `MAX_PERSISTENT_RULES` | 5 | WHEN + WHILE combined; oldest evicts |

@@ -211,7 +211,14 @@ effect_cards:
   - { id: eff.chained.apply, name: APPLY_CHAINED }
   - { id: eff.burn.clear.1, name: "CLEAR_BURN:1" }
   - { id: eff.draw.2, name: "DRAW:2" }
-  - { id: eff.noop, name: NOOP }
+  # RUL-73: NOOP replaced with a second DRAW:2 after first playtest. Players
+  # invest into rule completion expecting a payoff; NOOP punishes that
+  # investment with no observable effect. Doubling DRAW:2 keeps deck depth at
+  # 14 and adds a utility effect with no VP/chip economy shift. The id suffix
+  # `.alt` keeps the cards loader's unique-id invariant intact while the
+  # `name: "DRAW:2"` makes the engine dispatch identical to the existing
+  # DRAW:2 entry above.
+  - { id: eff.draw.2.alt, name: "DRAW:2" }
 
 shop_cards:
   # RUL-56 M2.5 starter pool per ADR-0007 (card-buy semantics via existing

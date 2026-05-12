@@ -8,7 +8,7 @@ Canonical schema for game state. Mirrors `design/state.md`. No game logic.
 
 ### Constants
 
-`PLAYER_COUNT=4`, `HAND_SIZE=7`, `STARTING_CHIPS=50`, `VP_TO_WIN=3`, `ACTIVE_GOALS=3`, `SHOP_INTERVAL=3`, `MAX_PERSISTENT_RULES=5`, `DISCARD_COST=5`, `BURN_TICK=5`.
+`PLAYER_COUNT=4`, `HAND_SIZE=7`, `STARTING_CHIPS=50`, `VP_TO_WIN=5`, `ACTIVE_GOALS=3`, `SHOP_INTERVAL=3`, `MAX_PERSISTENT_RULES=5`, `DISCARD_COST=5`, `BURN_TICK=5`.
 
 ### Enums (`StrEnum`)
 

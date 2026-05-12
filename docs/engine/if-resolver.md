@@ -100,7 +100,7 @@ Extend with `cards.yaml` in M2.
 
 ## M1.5 stub effect
 
-`_apply_stub_effect` adds `+1 VP` to every satisfying player. Awarding VP rather than chips lets games actually terminate at `VP_TO_WIN = 3`. Real effect application (driven by `revealed_effect` and `cards.yaml`) lands in M2.
+`_apply_stub_effect` adds `+1 VP` to every satisfying player. Awarding VP rather than chips lets games actually terminate at `VP_TO_WIN = 5`. Real effect application (driven by `revealed_effect` and `cards.yaml`) lands in M2.
 
 ---
 

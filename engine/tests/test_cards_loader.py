@@ -314,7 +314,7 @@ def test_load_effect_cards_covers_m2_starter_subset() -> None:
         "eff.burn.clear.1",
         "eff.chained.clear",
         "eff.draw.2",
-        "eff.noop",
+        "eff.draw.2.alt",
     }
 
 
