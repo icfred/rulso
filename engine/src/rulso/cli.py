@@ -57,8 +57,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     running ``rulso-server`` and drives the human seat via TTY. See
     :mod:`rulso.cli_ws`. The other flags (``--seed``, ``--rounds``,
     ``--human-seat``) are ignored in WS mode; the server owns those concerns.
+
+    With ``simulate`` as the first positional argument the CLI dispatches to
+    :func:`rulso.simulate.run` — see ``docs/engine/simulate.md`` for the
+    sim-harness contract. The remaining positional/flag args are forwarded.
     """
-    args = _parse_args(argv)
+    argv_list = list(sys.argv[1:] if argv is None else argv)
+    if argv_list and argv_list[0] == "simulate":
+        from rulso.simulate import run as run_simulate
+
+        return run_simulate(argv_list[1:], out=sys.stdout)
+    args = _parse_args(argv_list)
     if args.ws:
         from rulso.cli_ws import main_ws
 
