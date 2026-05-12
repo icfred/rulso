@@ -1,4 +1,4 @@
-_Last updated: 2026-05-11 by orchestrator session — **M3 + UX REWORK SHIPPED**: post-M3 client UX rethink (RUL-72) shipped via PR #76 — 7 panels (header, transcript, you, rule, goals, opponents, actions) + state-diff narration + click-toggle discard UI + named plays + round-transition rule snapshots + VP attribution + seat-relative "You" rendering + EFFECT inline rendering. **First real playtest signal from the user** (in orchestrator chat): (i) game length is too short for learning curve at VP_TO_WIN=3 — bump to 5; (ii) `eff.noop` in the effect deck produces "wasted round" feeling — swap (don't shrink). Engine 549 tests; M2 watchable 26/26. Next dispatchable: **RUL-73 design tuning** (VP_TO_WIN 3→5 + NOOP swap; engine + data, parallel-safe with anything client-side)._
+_Last updated: 2026-05-12 by orchestrator session — **DESIGN TUNING + SIM HARNESS SHIPPED**: RUL-73 (VP_TO_WIN 3→5; `eff.noop` swapped for `eff.draw.2.alt`; deck depth preserved at 14) shipped via PR #77; RUL-74 (`rulso simulate` harness — bot-vs-bot quantitative design signal) shipped via PR #78. Engine 566 tests passing (549 + 17 new sim tests). **First sim run against post-tuning main reveals fundamental design findings** — 97.8% of winner VP comes from goal claims (rule-building is theatre); 13 zero-play cards including ALL SUBJECTs (dealer auto-fills the slot, leaving SUBJECT cards dead in hand) + ALL operator MODIFIERs (random bot skips them per RUL-43); 47% cap-hit rate; 3 of 7 goals never claim. **Decision point**: build ISMCTS first (RUL-59 next sub-issue — smart bot may unmask design that random-bot can't see) OR fix structural SUBJECT-dead-weight first (~1-PR engine + data change). User to decide._
 
 # Rulso — orchestrator bootstrap
 
@@ -32,12 +32,68 @@ Foundation Client DoD bar is "ugly but playable": engine WS protocol + server, c
 
 ## In flight
 
-**Nothing in flight.** M3 closed (RUL-58 Done) + UX rework shipped (RUL-72 PR #76). User playtested in browser; surfaced two design-feel issues that block further playtest:
+**Nothing in flight.** RUL-73 + RUL-74 shipped + sim run against post-tuning main produced first quantitative design signal. Decision-point on next dispatch — see "Sim findings" + "Decision-point" sections below.
 
-1. **Game too short for learning curve at VP_TO_WIN=3** — first to 3 VP wins lands in 5-10 rounds; user couldn't form a coherent opinion before games ended. Bumping to 5.
-2. **`eff.noop` produces "wasted round" feeling** — when the round's revealed effect is NOOP, players invest cards into rule completion for no payoff. Swap (preserve deck depth at 12 — minimises fragility blast).
+User retro on process (carried from prior session): substrate-first was correct for engineering but UI iteration deferred too late; for the next project, paper-first / single-file-script-first prototyping is mandatory before committing engineering substrate. User opted to plow on with Rulso to a fun-or-not-fun verdict rather than pivot — sim harness exists to make that verdict cheap (seconds per data point, not games per data point).
 
-User also raised a broader retrospective: "I don't know if we have gone about this the right way." Honest take: substrate-first was correct (engine + protocol are clean) but UI iteration was deferred until very late, compressing all playtest signal into the last 24 hours of M3. Faster path would have been a deliberately-uglier client at RUL-66 (just print state, no panels) so design feedback came at week-1 speed. Trade-off was real; substrate-clarity won, playtest-velocity lost. **The good news: substrate is clean now, so design iteration from here is fast — each tuning ticket is a 1-line constant or a `cards.yaml` edit.**
+### Sim findings (1000-game sweep, post-RUL-73/74 main, `bots.random` only)
+
+```
+winners: 534/1000  cap_hits=466  by_seat={'0': 166, '1': 121, '2': 131, '3': 116}
+length: min=4 median=25 mean=101.2 max=200 std=92.5 cap_hit_rate=46.6%
+vp_source: all=rule:666/goal:7756  won=rule:148/goal:6734
+chips_final: min=0 median=2 mean=3.1 max=40 std=5.5
+```
+
+**Five findings worth a design conversation**:
+
+1. **Rule-building is theatre** — winners' VP source: rule effects 148 vs goal claims 6734 → **97.8% from goals**. The entire central mechanic — IF/WHEN/WHILE rule construction — barely contributes to winning. Goals are the real game
+2. **All 8 SUBJECTs + 5 operator MODIFIERs are dead** (13 zero-play cards across 1000 games):
+   - SUBJECT cards (`subj.{p0..p3, leader, wounded, anyone, each}`) rot in hand because the dealer auto-fills the SUBJECT slot at round_start (`legality.first_card_of_type` driven). Players never see an unfilled SUBJECT slot to play into. Either remove SUBJECTs from the player deck OR change dealer behaviour OR allow SUBJECT replacement plays
+   - Operator MODIFIERs (`mod.op.{and, or, but, more_than, at_least}`) are deliberately skipped by `bots.random._enumerate_plays` per RUL-43 ("the bot leaves them in hand rather than crash"). Known M2 limitation — ISMCTS will likely use them
+3. **47% cap-hit rate** — 466/1000 games stalemate at 200 rounds. Either VP_TO_WIN=5 is too high, or random-bot indecision is the cause (could be unmasked by ISMCTS)
+4. **Goal pool unbalanced** — `goal.hoarder` claims 4236 times; `goal.banker`, `goal.builder`, `goal.philanthropist` claim 0 times; `goal.survivor` claims only 104. Three of seven goals are dead
+5. **Effect cards roughly balanced** — every effect card in the deck has fire-rate ≥0.99 (drawn ≈ fired); no dead effects post-eff.noop swap
+
+### Decision-point: ISMCTS first vs structural design fix first
+
+Two ways forward:
+
+**Option A — Build ISMCTS first (RUL-59 next sub-issue)**: per ADR-0006, the original plan was smart-bots-after-Foundation-Client for exactly this reason. Random bot is too noisy to draw structural conclusions — it skips operator MODIFIERs by design and may misuse SUBJECTs even when legal. Smart bot retunes the random-bot baseline; if cap-hit drops + VP shifts to rules + dead-card list shrinks, the design is salvageable and tuning can proceed. If not, the design has structural problems random-bot already revealed correctly. **Cost**: ISMCTS is a multi-PR build per `tech.md` §"Bot AI" (sample-from-public-info, K rollouts per move, eval function). Days of work
+**Option B — Fix the structural SUBJECT dead-weight first**: simpler, faster signal. Either (a) remove `subj.*` cards from `cards.yaml deck:` entirely (dealer auto-fill draws from a separate small pool), (b) change dealer to NOT auto-fill SUBJECT (make it a player decision), (c) allow SUBJECT replacement / overlay plays. ~1-PR engine + data change. Re-run sim immediately to see if the dead-weight finding moves
+**Option A+B in parallel**: both are parallel-safe (engine substrate vs bot module). Could fan if user has appetite for two parallel chats again
+
+Recommendation: **A** is the principled path (don't tune blind; smart-bot signal validates or refutes the random-bot findings). **B** is a quick-cycle structural fix; even if ISMCTS later shows random-bot was wrong about the dead cards, removing structurally-dead cards from the deck is still correct. **A+B in parallel** gets both signals in one workday. User picks.
+
+### RUL-73 + RUL-74 ship summary (2026-05-12, PRs #77 / #78)
+
+| Ticket | PR | Notes |
+|---|---|---|
+| RUL-73 | #77 | `VP_TO_WIN: 3 → 5` in `state.py`; `eff.noop` row in `cards.yaml` replaced with `{ id: eff.draw.2.alt, name: "DRAW:2" }` (preserves deck depth at 14 — RUL-61 had already extended it from 12 to 14 with eff.marked.apply + eff.chained.clear; orchestrator's hand-over said "12" by mistake; worker correctly observed actual depth was 14, fixed prose in `design/effects-inventory.md`). 12 files / +52 −36; M2 watchable 6/10 floor preserved (winning seed set shifted 0/1/3/5/7/9 → 1/3/4/5/7/9 because seed 0 now caps out under longer games + seed 4 now completes within budget). Determinism byte-identical-stdout invariant holds. `_noop` handler in `effects.py` left alone (still covers the no-revealed-effect fallback path). |
+| RUL-74 | #78 | New `engine/src/rulso/simulate.py` (~700 lines): observer-wrapper pattern (same shape as `test_m2_watchable.py` per RUL-35) wraps effects + status + goals + cards loader, no engine substrate edit, no module-level mutable state. CLI subcommand `rulso simulate --games N [--seed-base S] [--rounds R] [--analyse PATH] [--summary]`. 9 metric categories: winner distribution, game length, card usage, effect fire rates, goal claims, VP attribution, JOKER variants, status-token frequencies, chip-economy snapshot. Auto-anomaly flags (zero-occurrence cards/effects/goals; winner-skew >2x flat; cap-hit >50%). 17 new tests covering determinism, per-category coverage, anomaly triggers, engine restoration. Throughput post-cache: ~130 games/sec (engine yaml re-parse was 87% hot path; `cards.load_*` cached for the sim's duration via the same observer pattern, restored on teardown — CLI/server hot paths unchanged). |
+
+**Worker hand-back flags addressed**:
+
+- RUL-73: hand-over said "preserve deck depth at 12" — worker correctly observed actual depth was 14 (RUL-61 had extended it). Worker preserved 14 (spirit of "don't shrink" honoured); fixed `design/effects-inventory.md` prose. **STATUS.md follow-up**: any future `effect_cards:` count assertions should reference 14 not 12. Done in this sweep.
+- RUL-73: M2 watchable 6/10 winners maintained but seed set shifted (0/1/3/5/7/9 → 1/3/4/5/7/9). Determinism baseline updated in-PR; back-to-back same-seed byte-identity preserved. Acceptable per the ticket's "frozen-baseline tests will likely shift" allowance.
+- RUL-74: cap-hit anomaly threshold set to 50% (above current ~36-40% baseline) to avoid false-positives on the random-bot baseline. Worker documented inline + in `simulate.md`; tightens once ISMCTS lands.
+- RUL-74: `cards.load_*` caching observer added because re-parsing `design/cards.yaml` once per round was 87% of runtime (~0.65 games/sec). With the cache: ~130 games/sec. Same observer-wrapper pattern as engine modules — no permanent state, restored on teardown.
+
+**Cross-cutting fixes landed via this RUL-23 sweep**:
+
+- `docs/engine/readme.md`: `state.py` row notes `VP_TO_WIN` bump; `cli.py` row notes `simulate` subcommand; new `simulate.py` row + new `test_simulate.py` row; `_Last edited:` bumped
+- STATUS.md re-anchored to post-RUL-73/74 (this entry) — sim findings captured + decision-point teed up
+
+### Open follow-ups post-RUL-73/74
+
+- **Decision-point above** is the active follow-up — A vs B vs A+B. User to choose
+- **`mod.op.*` operator MODIFIERs random-bot skip** (RUL-43) — explicitly known limitation; ISMCTS will use them. Captured here for completeness; not a new follow-up
+- **`subj.*` card dead-weight in player deck** — surfaced by sim. New follow-up or part of Option B above
+- **Goal pool rebalance** — `goal.hoarder` dominates; `goal.banker`/`goal.builder`/`goal.philanthropist` never fire. Either tighten goal predicates, swap dead goals for new ones, or accept and reduce goal-VP weighting. Defer until A vs B decision
+- **VP_TO_WIN further tuning** — current 5 with 47% cap-hit rate suggests the constant may be too high relative to the per-round payoff. Either bump rounds limit, or reduce VP_TO_WIN to 4, or fix the upstream rule-building-is-theatre issue. Defer until A vs B decision
+- **`_OP_ONLY_COMPARATOR_NAMES` duplication** — open follow-up; not blocking
+- **`npm run lint` cwd-config quirk** — open follow-up; not blocking
+- **TS type-gen `state.py` coverage** — open follow-up; not blocking
 
 ### RUL-72 ship summary (2026-05-11, PR #76)
 
