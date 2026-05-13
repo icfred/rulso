@@ -47,7 +47,8 @@ from typing import Any, TextIO
 
 from rulso import cards as cards_module
 from rulso import effects, goals, status
-from rulso.bots.random import choose_action, select_purchase
+from rulso.bots import ismcts as ismcts_bot
+from rulso.bots import random as random_bot
 from rulso.legality import DiscardRedraw, Pass, PlayCard, PlayJoker
 from rulso.rules import (
     advance_phase,
@@ -65,6 +66,19 @@ _DEFAULT_GAMES: int = 1000
 _DEFAULT_SEED_BASE: int = 0
 _DEFAULT_ROUNDS: int = 200
 _DEFAULT_DUMP_PATH: str = "simulate.json"
+
+# Per-seat bot assignment: ``bot_a`` fills seat 0, ``bot_b`` fills seats 1-3.
+# Spike asymmetry is intentional — the head-to-head question is "does the
+# smart bot beat 3 random opponents from seat 0?", so seat 0 is the
+# ``bot_a`` slot and the rest are ``bot_b``. Richer assignments (e.g.
+# 2v2, single ismcts at any seat) can land in a follow-up if/when needed.
+_DEFAULT_BOT_A: str = "random"
+_DEFAULT_BOT_B: str = "random"
+
+_BOTS: dict[str, Any] = {
+    "random": random_bot,
+    "ismcts": ismcts_bot,
+}
 
 # Mirror cli._OP_ONLY_COMPARATOR_NAMES — kept local to avoid importing cli
 # (which would pull in argparse for every simulate invocation that imports
@@ -117,9 +131,15 @@ class _GameResult:
 
 @dataclass
 class SimResults:
-    """Aggregated simulation output. Serialised by :func:`to_json_dict`."""
+    """Aggregated simulation output. Serialised by :func:`to_json_dict`.
 
-    config: dict[str, int]
+    ``config`` carries scalar parameters (numerics + bot assignment strings).
+    The mixed-type signature reflects the JSON shape: ``games`` /
+    ``seed_base`` / ``max_rounds`` are ints; ``bot_a`` / ``bot_b`` are
+    short identifier strings.
+    """
+
+    config: dict[str, Any]
     catalogue: dict[str, tuple[str, ...]]
     per_game: tuple[_GameResult, ...]
 
@@ -134,10 +154,20 @@ class _Observer:
     before play; patched wrappers write into ``current`` directly. After the
     game completes the caller pulls ``current`` out and stashes it in the
     per-game list.
+
+    ``pause_depth`` is the ISMCTS-rollout sentinel: when >0, wrappers
+    delegate to the original function without incrementing counters. The
+    driver bumps the depth around each ``bot.choose_action`` /
+    ``bot.select_purchase`` call so engine paths reached during a smart
+    bot's lookahead (e.g. ISMCTS rolling out games to score candidate
+    actions) don't pollute the canonical-game metrics. Random bots never
+    touch engine paths during their decision so the pause is a no-op for
+    them — kept unconditional for shape symmetry.
     """
 
     def __init__(self) -> None:
         self.current: _GameResult | None = None
+        self.pause_depth: int = 0
 
     def _gr(self) -> _GameResult:
         gr = self.current
@@ -182,7 +212,7 @@ def _patch_engine(obs: _Observer) -> dict[str, Any]:
         state: GameState, revealed_effect: Card | None, scope: frozenset[str]
     ) -> GameState:
         out = orig_dispatch(state, revealed_effect, scope)
-        if revealed_effect is not None and out is not state:
+        if obs.pause_depth == 0 and revealed_effect is not None and out is not state:
             obs._gr().effect_fires[revealed_effect.id] += 1
         return out
 
@@ -191,6 +221,8 @@ def _patch_engine(obs: _Observer) -> dict[str, Any]:
         rule: Any,
         labels_map: dict[str, frozenset[str]] | None = None,
     ) -> GameState:
+        if obs.pause_depth > 0:
+            return orig_resolve_if(state, rule, labels_map)
         before = sum(p.vp for p in state.players)
         out = orig_resolve_if(state, rule, labels_map)
         delta = sum(p.vp for p in out.players) - before
@@ -199,6 +231,8 @@ def _patch_engine(obs: _Observer) -> dict[str, Any]:
         return out
 
     def wrapped_resolve_one_goal(state: GameState, index: int, goal: Any) -> GameState:
+        if obs.pause_depth > 0:
+            return orig_resolve_one_goal(state, index, goal)
         before = sum(p.vp for p in state.players)
         out = orig_resolve_one_goal(state, index, goal)
         delta = sum(p.vp for p in out.players) - before
@@ -208,53 +242,55 @@ def _patch_engine(obs: _Observer) -> dict[str, Any]:
         return out
 
     def wrapped_apply_burn(player: Player, magnitude: int = 1) -> Player:
-        obs._gr().status_apply["BURN"] += magnitude
+        if obs.pause_depth == 0:
+            obs._gr().status_apply["BURN"] += magnitude
         return orig_apply_burn(player, magnitude)
 
     def wrapped_apply_mute(player: Player) -> Player:
-        if not player.status.mute:
+        if obs.pause_depth == 0 and not player.status.mute:
             obs._gr().status_apply["MUTE"] += 1
         return orig_apply_mute(player)
 
     def wrapped_apply_blessed(player: Player) -> Player:
-        if not player.status.blessed:
+        if obs.pause_depth == 0 and not player.status.blessed:
             obs._gr().status_apply["BLESSED"] += 1
         return orig_apply_blessed(player)
 
     def wrapped_apply_marked(player: Player) -> Player:
-        if not player.status.marked:
+        if obs.pause_depth == 0 and not player.status.marked:
             obs._gr().status_apply["MARKED"] += 1
         return orig_apply_marked(player)
 
     def wrapped_apply_chained(player: Player) -> Player:
-        if not player.status.chained:
+        if obs.pause_depth == 0 and not player.status.chained:
             obs._gr().status_apply["CHAINED"] += 1
         return orig_apply_chained(player)
 
     def wrapped_clear_burn(player: Player) -> Player:
-        if player.status.burn > 0:
+        if obs.pause_depth == 0 and player.status.burn > 0:
             obs._gr().status_clear["BURN"] += 1
         return orig_clear_burn(player)
 
     def wrapped_clear_chained(player: Player) -> Player:
-        if player.status.chained:
+        if obs.pause_depth == 0 and player.status.chained:
             obs._gr().status_clear["CHAINED"] += 1
         return orig_clear_chained(player)
 
     def wrapped_consume(player: Player, loss: int) -> Player:
-        if player.status.blessed:
+        if obs.pause_depth == 0 and player.status.blessed:
             obs._gr().status_clear["BLESSED"] += 1
         return orig_consume(player, loss)
 
     def wrapped_tick_round_start(player: Player) -> Player:
-        if player.status.burn > 0:
-            obs._gr().status_decay["BURN"] += player.status.burn
-        if player.status.mute:
-            obs._gr().status_decay["MUTE"] += 1
+        if obs.pause_depth == 0:
+            if player.status.burn > 0:
+                obs._gr().status_decay["BURN"] += player.status.burn
+            if player.status.mute:
+                obs._gr().status_decay["MUTE"] += 1
         return orig_tick_round_start(player)
 
     def wrapped_tick_resolve_end(player: Player) -> Player:
-        if player.status.marked:
+        if obs.pause_depth == 0 and player.status.marked:
             obs._gr().status_decay["MARKED"] += 1
         return orig_tick_resolve_end(player)
 
@@ -342,7 +378,13 @@ def _unpatch_cards_cache(originals: dict[str, Any]) -> None:
 # --- Game runner ------------------------------------------------------------
 
 
-def _play_one_game(seed: int, max_rounds: int, obs: _Observer) -> _GameResult:
+def _play_one_game(
+    seed: int,
+    max_rounds: int,
+    obs: _Observer,
+    bot_a: Any,
+    bot_b: Any,
+) -> _GameResult:
     """Run one bot-vs-bot game; return per-game stats.
 
     Mirrors :func:`rulso.cli.run_game` minus the line-oriented narration —
@@ -351,6 +393,11 @@ def _play_one_game(seed: int, max_rounds: int, obs: _Observer) -> _GameResult:
     :func:`_patch_engine`; the loop here is responsible for the metrics that
     only the driver sees (card plays, joker plays, effect draws, winner seat,
     rounds started).
+
+    ``bot_a`` drives seat 0; ``bot_b`` drives seats 1-3. The bots expose
+    ``choose_action(state, player_id, rng)`` and
+    ``select_purchase(state, player_id, rng)``; ISMCTS pass-throughs to
+    random for SHOP / non-BUILD per its spike scope.
     """
     rng = random.Random(seed)
     refill_rng = random.Random(seed ^ 0x5EED)
@@ -379,11 +426,11 @@ def _play_one_game(seed: int, max_rounds: int, obs: _Observer) -> _GameResult:
             state = advance_phase(state, rng=effect_rng)
         elif state.phase is Phase.BUILD:
             _maybe_count_effect_draw(state, gr, seen_revealed_effect_ids)
-            state = _drive_build_turn(state, rng, dice_rng, refill_rng, gr)
+            state = _drive_build_turn(state, rng, dice_rng, refill_rng, gr, bot_a, bot_b, obs)
         elif state.phase is Phase.RESOLVE:
             state = advance_phase(state, rng=refill_rng)
         elif state.phase is Phase.SHOP:
-            state = _drive_shop(state, rng)
+            state = _drive_shop(state, rng, bot_a, bot_b, obs)
             state = advance_phase(state, rng=effect_rng)
         else:
             raise AssertionError(f"unexpected phase {state.phase!r}")
@@ -394,6 +441,11 @@ def _play_one_game(seed: int, max_rounds: int, obs: _Observer) -> _GameResult:
     gr.winner_seat = winner.seat if winner is not None else None
     obs.current = None
     return gr
+
+
+def _bot_for_seat(seat: int, bot_a: Any, bot_b: Any) -> Any:
+    """Return the bot driving ``seat`` — ``bot_a`` for seat 0, ``bot_b`` otherwise."""
+    return bot_a if seat == 0 else bot_b
 
 
 def _maybe_count_effect_draw(state: GameState, gr: _GameResult, seen_ids: set[int]) -> None:
@@ -413,9 +465,17 @@ def _drive_build_turn(
     dice_rng: random.Random,
     refill_rng: random.Random,
     gr: _GameResult,
+    bot_a: Any,
+    bot_b: Any,
+    obs: _Observer,
 ) -> GameState:
     active_player = state.players[state.active_seat]
-    action = choose_action(state, active_player.id, rng)
+    bot = _bot_for_seat(state.active_seat, bot_a, bot_b)
+    obs.pause_depth += 1
+    try:
+        action = bot.choose_action(state, active_player.id, rng)
+    finally:
+        obs.pause_depth -= 1
     if isinstance(action, PlayCard):
         card = _find_hand_card(active_player, action.card_id)
         gr.card_plays[card.id] += 1
@@ -437,10 +497,18 @@ def _drive_build_turn(
     raise AssertionError(f"unhandled action variant {type(action).__name__}")
 
 
-def _drive_shop(state: GameState, rng: random.Random) -> GameState:
+def _drive_shop(
+    state: GameState, rng: random.Random, bot_a: Any, bot_b: Any, obs: _Observer
+) -> GameState:
     order = shop_purchase_order(state)
     for player_id in order:
-        offer_index = select_purchase(state, player_id, rng)
+        seat = next(p.seat for p in state.players if p.id == player_id)
+        bot = _bot_for_seat(seat, bot_a, bot_b)
+        obs.pause_depth += 1
+        try:
+            offer_index = bot.select_purchase(state, player_id, rng)
+        finally:
+            obs.pause_depth -= 1
         if offer_index is None:
             continue
         state = apply_shop_purchase(state, player_id, offer_index)
@@ -462,19 +530,32 @@ def simulate(
     games: int = _DEFAULT_GAMES,
     seed_base: int = _DEFAULT_SEED_BASE,
     max_rounds: int = _DEFAULT_ROUNDS,
+    bot_a: str = _DEFAULT_BOT_A,
+    bot_b: str = _DEFAULT_BOT_B,
 ) -> SimResults:
     """Run ``games`` self-play games and return aggregated stats.
 
-    Deterministic: same ``games`` + ``seed_base`` + ``max_rounds`` produce
-    byte-identical output (per the disjoint-rng pattern). Patches engine
-    entry points for observation and restores them in a ``finally`` block;
-    raises propagate after restoration so a partial run does not leave the
-    engine wedged.
+    Deterministic: same ``games`` + ``seed_base`` + ``max_rounds`` +
+    ``bot_a`` + ``bot_b`` produce byte-identical output (per the disjoint-
+    rng pattern; ISMCTS rng-threading honours the same contract). Patches
+    engine entry points for observation and restores them in a ``finally``
+    block; raises propagate after restoration so a partial run does not
+    leave the engine wedged.
+
+    ``bot_a`` drives seat 0; ``bot_b`` drives seats 1-3. Both default to
+    ``"random"`` so existing callers see no behavioural change.
     """
     if games <= 0:
         raise ValueError(f"games must be > 0, got {games}")
     if max_rounds <= 0:
         raise ValueError(f"max_rounds must be > 0, got {max_rounds}")
+    if bot_a not in _BOTS:
+        raise ValueError(f"unknown bot_a {bot_a!r}; supported: {sorted(_BOTS)}")
+    if bot_b not in _BOTS:
+        raise ValueError(f"unknown bot_b {bot_b!r}; supported: {sorted(_BOTS)}")
+
+    bot_a_mod = _BOTS[bot_a]
+    bot_b_mod = _BOTS[bot_b]
 
     catalogue = _load_catalogue()
     obs = _Observer()
@@ -484,7 +565,7 @@ def simulate(
     try:
         for i in range(games):
             seed = seed_base + i
-            per_game.append(_play_one_game(seed, max_rounds, obs))
+            per_game.append(_play_one_game(seed, max_rounds, obs, bot_a_mod, bot_b_mod))
     finally:
         _unpatch_cards_cache(cards_originals)
         _unpatch_engine(engine_originals)
@@ -494,6 +575,8 @@ def simulate(
             "games": games,
             "seed_base": seed_base,
             "max_rounds": max_rounds,
+            "bot_a": bot_a,
+            "bot_b": bot_b,
         },
         catalogue=catalogue,
         per_game=tuple(per_game),
@@ -715,15 +798,28 @@ def format_summary(payload: dict[str, Any]) -> str:
     gl = payload["game_length"]
     vp = payload["vp_attribution"]
     ce = payload["chip_economy"]
+    bot_a = cfg.get("bot_a", "random")
+    bot_b = cfg.get("bot_b", "random")
     lines: list[str] = []
     lines.append(
         f"simulate: games={cfg['games']} seed_base={cfg['seed_base']} "
-        f"max_rounds={cfg['max_rounds']}"
+        f"max_rounds={cfg['max_rounds']} bot_a={bot_a} bot_b={bot_b}"
     )
     lines.append(
         f"winners: {wd['winners']}/{cfg['games']}  cap_hits={wd['cap_hits']}  "
         f"by_seat={wd['by_seat']}"
     )
+    # Head-to-head — only meaningful when the per-seat bot assignment is
+    # asymmetric (the spike's smart-vs-random eval). For symmetric runs the
+    # by_seat breakdown above already tells the same story.
+    if bot_a != bot_b:
+        seat0 = wd["by_seat"].get("0", 0)
+        seats_other = sum(v for k, v in wd["by_seat"].items() if k != "0")
+        lines.append(
+            f"head-to-head: seat 0 ({bot_a}) wins {seat0}/{cfg['games']}"
+            f" ({seat0 / cfg['games']:.1%}) "
+            f"vs seats 1-3 ({bot_b}) wins {seats_other}/{cfg['games']}"
+        )
     lines.append(
         f"length: min={gl['min']} median={gl['median']:.0f} mean={gl['mean']:.1f} "
         f"max={gl['max']} std={gl['std']:.1f} cap_hit_rate={gl['cap_hit_rate']:.1%}"
@@ -804,6 +900,8 @@ def run(argv: Sequence[str] | None = None, out: TextIO | None = None) -> int:
         games=args.games,
         seed_base=args.seed_base,
         max_rounds=args.rounds,
+        bot_a=args.bot_a,
+        bot_b=args.bot_b,
     )
     payload = to_json_dict(results)
     if args.analyse:
@@ -857,6 +955,18 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
             "print a terminal summary in addition to the JSON dump. "
             "Implicit when --analyse is omitted."
         ),
+    )
+    parser.add_argument(
+        "--bot-a",
+        choices=sorted(_BOTS),
+        default=_DEFAULT_BOT_A,
+        help=f"bot driving seat 0 (default: {_DEFAULT_BOT_A})",
+    )
+    parser.add_argument(
+        "--bot-b",
+        choices=sorted(_BOTS),
+        default=_DEFAULT_BOT_B,
+        help=f"bot driving seats 1-3 (default: {_DEFAULT_BOT_B})",
     )
     return parser.parse_args(argv)
 
