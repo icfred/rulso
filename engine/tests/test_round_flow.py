@@ -27,17 +27,8 @@ def _card(cid: str, type_: CardType) -> Card:
 
 def _drive_to_first_build(seed: int = 0) -> GameState:
     state = start_game(seed)
-    # RUL-23 cross-cutting: inject a SUBJECT into the dealer's hand so the
-    # rule never fails at enter_round_start step 7. The randomly dealt
-    # seed-0 hand happened to contain a SUBJECT under the M1.5 deck (50
-    # cards, 18 SUBJECTs) but Phase 3 deck extensions reshuffle, breaking
-    # tests that rely on this lucky deal. Injection makes the helper
-    # seed-independent.
-    seed_subject = Card(id="subj.p0", type=CardType.SUBJECT, name="p0")
-    dealer = state.players[state.dealer_seat]
-    new_dealer = dealer.model_copy(update={"hand": (seed_subject,) + dealer.hand})
-    new_players = tuple(new_dealer if p.seat == state.dealer_seat else p for p in state.players)
-    state = state.model_copy(update={"players": new_players})
+    # RUL-75: dealer no longer pre-fills slot 0, so round_start always
+    # reaches BUILD regardless of dealer hand. No injection needed.
     return advance_phase(state)
 
 
@@ -90,7 +81,9 @@ def test_start_game_uses_no_cards_outside_main_deck() -> None:
     assert dealt_count + remaining == len(decks.main)
 
 
-def test_advance_from_round_start_enters_build_with_dealer_first_slot_filled() -> None:
+def test_advance_from_round_start_enters_build_with_unfilled_slots() -> None:
+    """RUL-75: dealer no longer pre-fills slot 0. All condition slots start
+    unfilled; any player can play a matching card during BUILD."""
     state = _drive_to_first_build(seed=0)
     assert state.phase is Phase.BUILD
     assert state.round_number == 1
@@ -102,10 +95,8 @@ def test_advance_from_round_start_enters_build_with_dealer_first_slot_filled() -
     slots = state.active_rule.slots
     # Slot defs come from the CONDITION template; M1.5 has IF (3 slots).
     assert tuple(s.name for s in slots) == ("SUBJECT", "QUANT", "NOUN")
-    assert slots[0].filled_by is not None
-    assert slots[0].filled_by.type is CardType.SUBJECT
-    assert all(s.filled_by is None for s in slots[1:])
-    assert state.active_rule.plays[0].player_id == "p0"
+    assert all(s.filled_by is None for s in slots)
+    assert state.active_rule.plays == ()
 
 
 def test_round_start_slot_defs_match_condition_template() -> None:
@@ -117,40 +108,6 @@ def test_round_start_slot_defs_match_condition_template() -> None:
     assert rule.template is template.kind
     assert tuple(s.name for s in rule.slots) == tuple(cs.name for cs in template.slots)
     assert tuple(s.type for s in rule.slots) == tuple(cs.type for cs in template.slots)
-
-
-def test_dealer_first_slot_card_came_from_dealer_hand() -> None:
-    state = start_game(seed=0)
-    # RUL-23: inject a SUBJECT into dealer's hand for deck-size resilience
-    # (Phase 3 deck extensions reshuffle seed-0 deals).
-    seed_subject = Card(id="subj.p0", type=CardType.SUBJECT, name="p0")
-    dealer = state.players[0]
-    new_dealer = dealer.model_copy(update={"hand": (seed_subject,) + dealer.hand})
-    state = state.model_copy(
-        update={"players": (new_dealer,) + state.players[1:]},
-    )
-    dealer_hand_before = state.players[0].hand
-    state = advance_phase(state)
-    chosen = state.active_rule.slots[0].filled_by
-    assert chosen is not None
-    assert chosen in dealer_hand_before
-    # That card is now removed from the dealer's hand.
-    assert state.players[0].hand.count(chosen) == dealer_hand_before.count(chosen) - 1
-
-
-def test_round_start_fails_immediately_when_dealer_has_no_seed_card() -> None:
-    """No SUBJECT in dealer hand → consumes the round, rotates dealer, returns to ROUND_START."""
-    state = start_game(seed=0)
-    # Strip every SUBJECT from seat 0 (current dealer).
-    dealer = state.players[0]
-    no_subject_hand = tuple(c for c in dealer.hand if c.type is not CardType.SUBJECT)
-    state = _override_player_hand(state, 0, no_subject_hand)
-    state = advance_phase(state)
-    assert state.phase is Phase.ROUND_START
-    assert state.dealer_seat == 1  # rotated
-    assert state.round_number == 1  # round was consumed
-    assert state.active_rule is None
-    assert state.revealed_effect is None
 
 
 def test_play_card_fills_slot_and_advances_active_seat() -> None:
@@ -183,8 +140,12 @@ def test_play_card_rejects_type_mismatch() -> None:
 
 def test_play_card_rejects_filled_slot() -> None:
     state = _drive_to_first_build(seed=0)
+    # Fill SUBJECT with one player, then try to overwrite from another seat.
+    first = _card("first_subj", CardType.SUBJECT)
+    state = _override_player_hand(state, 1, (first,))
+    state = play_card(state, first, "SUBJECT")
     dup = _card("dup", CardType.SUBJECT)
-    state = _override_player_hand(state, 1, (dup,))
+    state = _override_player_hand(state, 2, (dup,))
     with pytest.raises(ValueError, match="already filled"):
         play_card(state, dup, "SUBJECT")
 
@@ -204,18 +165,21 @@ def test_play_card_outside_build_raises() -> None:
 
 
 def test_build_with_all_slots_filled_transitions_to_resolve() -> None:
+    """RUL-75: SUBJECT must now be played during BUILD too — dealer no longer
+    pre-fills it. Inject one matching card per slot across the three non-dealer
+    seats; dealer forced-passes."""
     state = _drive_to_first_build(seed=0)
-    # Inject one matching card into each non-dealer seat.
     state = _override_player_hand(
         state, 1, (Card(id="quant_le_5", type=CardType.MODIFIER, name="LE:5"),)
     )
     state = _override_player_hand(
         state, 2, (Card(id="noun_chips", type=CardType.NOUN, name="CHIPS"),)
     )
-    state = _override_player_hand(state, 3, (_card("filler", CardType.NOUN),))
+    state = _override_player_hand(state, 3, (_card("subj_p1", CardType.SUBJECT),))
+    state = _override_player_hand(state, 0, ())
     state = play_card(state, state.players[1].hand[0], "QUANT")
     state = play_card(state, state.players[2].hand[0], "NOUN")
-    state = pass_turn(state)  # seat 3 forced pass — no remaining open slot
+    state = play_card(state, state.players[3].hand[0], "SUBJECT")
     state = pass_turn(state)  # dealer's build turn — all slots already filled
     assert state.phase is Phase.RESOLVE
     assert state.build_turns_taken == PLAYER_COUNT
@@ -224,9 +188,9 @@ def test_build_with_all_slots_filled_transitions_to_resolve() -> None:
 
 def test_build_with_unfilled_slot_fails_back_to_round_start() -> None:
     state = _drive_to_first_build(seed=0)
-    # All non-dealer seats start without injected hands → all forced passes.
-    # Strip seat 1..3 hands so the random hands don't accidentally fill slots.
-    for seat in (1, 2, 3):
+    # Strip every hand so all four seats forced-pass → rule fails with no
+    # slots filled. RUL-75: no dealer pre-fill, so discard ends empty.
+    for seat in range(PLAYER_COUNT):
         state = _override_player_hand(state, seat, ())
     state = pass_turn(state)
     state = pass_turn(state)
@@ -235,9 +199,7 @@ def test_build_with_unfilled_slot_fails_back_to_round_start() -> None:
     assert state.phase is Phase.ROUND_START
     assert state.dealer_seat == 1
     assert state.active_rule is None
-    # Only the dealer's SUBJECT fragment is in discard; QUANT and NOUN slots
-    # were never filled.
-    assert len(state.discard) == 1
+    assert state.discard == ()
 
 
 def test_resolve_transitions_to_round_start_and_rotates_dealer() -> None:
@@ -248,10 +210,11 @@ def test_resolve_transitions_to_round_start_and_rotates_dealer() -> None:
     state = _override_player_hand(
         state, 2, (Card(id="noun_chips", type=CardType.NOUN, name="CHIPS"),)
     )
-    state = _override_player_hand(state, 3, (_card("filler", CardType.NOUN),))
+    state = _override_player_hand(state, 3, (_card("subj_p1", CardType.SUBJECT),))
+    state = _override_player_hand(state, 0, ())
     state = play_card(state, state.players[1].hand[0], "QUANT")
     state = play_card(state, state.players[2].hand[0], "NOUN")
-    state = pass_turn(state)
+    state = play_card(state, state.players[3].hand[0], "SUBJECT")
     state = pass_turn(state)
     assert state.phase is Phase.RESOLVE
     state = enter_resolve(state, rng=random.Random(0))
@@ -271,10 +234,11 @@ def test_advance_phase_from_resolve_invokes_enter_resolve() -> None:
     state = _override_player_hand(
         state, 2, (Card(id="noun_chips", type=CardType.NOUN, name="CHIPS"),)
     )
-    state = _override_player_hand(state, 3, (_card("filler", CardType.NOUN),))
+    state = _override_player_hand(state, 3, (_card("subj_p1", CardType.SUBJECT),))
+    state = _override_player_hand(state, 0, ())
     state = play_card(state, state.players[1].hand[0], "QUANT")
     state = play_card(state, state.players[2].hand[0], "NOUN")
-    state = pass_turn(state)
+    state = play_card(state, state.players[3].hand[0], "SUBJECT")
     state = pass_turn(state)
     state = advance_phase(state, rng=random.Random(0))
     assert state.phase in (Phase.ROUND_START, Phase.END)
@@ -283,8 +247,12 @@ def test_advance_phase_from_resolve_invokes_enter_resolve() -> None:
 def test_dealer_rotates_across_four_rounds_via_failed_rules() -> None:
     """Inject all-empty hands so every round fails; assert dealer rotates 0,1,2,3.
 
+    RUL-75: empty hands now enter BUILD (no dealer seed-fill) and fail at
+    end-of-revolution with all slots unfilled. Drive the full revolution per
+    round.
+
     RUL-56: ``shop_pool`` overridden to empty so the SHOP cadence (round 3)
-    skips and the test exercises only the dealer-no-seed rotation path.
+    skips and the test exercises only the unfilled-slot rotation path.
     """
     state = start_game()
     state = state.model_copy(update={"shop_pool": ()})
@@ -293,11 +261,12 @@ def test_dealer_rotates_across_four_rounds_via_failed_rules() -> None:
     seen_dealers: list[int] = []
     seen_rounds: list[int] = []
     for _ in range(PLAYER_COUNT):
-        # No cards anywhere → enter_round_start hits the dealer-no-seed path.
-        # That returns to ROUND_START directly without entering BUILD.
         prior = state.dealer_seat
         prior_round = state.round_number
         state = advance_phase(state)
+        assert state.phase is Phase.BUILD
+        for _ in range(PLAYER_COUNT):
+            state = pass_turn(state)
         assert state.phase is Phase.ROUND_START
         seen_dealers.append(prior)
         seen_rounds.append(prior_round + 1)
@@ -305,16 +274,12 @@ def test_dealer_rotates_across_four_rounds_via_failed_rules() -> None:
     assert seen_rounds == [1, 2, 3, 4]
 
 
-def test_advance_from_lobby_enters_round_start() -> None:
-    """LOBBY → ROUND_START → BUILD via advance_phase composes cleanly when the
-    dealer holds a SUBJECT card."""
-    seed_card = Card(id="held_subj", type=CardType.SUBJECT, name="p0")
+def test_advance_from_lobby_enters_build() -> None:
+    """LOBBY → ROUND_START → BUILD via advance_phase. RUL-75: dealer no longer
+    needs to hold a SUBJECT — slots all start unfilled."""
     state = GameState(
         phase=Phase.LOBBY,
-        players=tuple(
-            Player(id=f"p{i}", seat=i, hand=(seed_card,) if i == 0 else ())
-            for i in range(PLAYER_COUNT)
-        ),
+        players=tuple(Player(id=f"p{i}", seat=i) for i in range(PLAYER_COUNT)),
     )
     state = advance_phase(state)
     assert state.phase is Phase.BUILD
@@ -323,15 +288,21 @@ def test_advance_from_lobby_enters_round_start() -> None:
 
 def test_advance_from_shop_with_empty_offer_resumes_round_start() -> None:
     """RUL-51: SHOP can be entered manually with no offers; advance_phase
-    treats the empty offer as "all unsold" and resumes round_start steps 6-8
-    (dealer-no-seed in this stub state → ROUND_START with rotated dealer)."""
+    treats the empty offer as "all unsold" and resumes round_start steps 6-8.
+
+    RUL-75: with no dealer seed-fill, the stub state now reaches BUILD
+    cleanly. All four seats forced-pass → rule fails → ROUND_START with
+    rotated dealer.
+    """
     state = GameState(
         phase=Phase.SHOP,
         players=tuple(Player(id=f"p{i}", seat=i) for i in range(PLAYER_COUNT)),
     )
     out = advance_phase(state)
+    assert out.phase is Phase.BUILD
+    for _ in range(PLAYER_COUNT):
+        out = pass_turn(out)
     assert out.phase is Phase.ROUND_START
-    # Dealer rotated because no SUBJECT card was held to seed slot 0.
     assert out.dealer_seat == 1
 
 
@@ -371,10 +342,11 @@ def test_refill_replenishes_hands_to_hand_size_after_resolve() -> None:
     state = _override_player_hand(
         state, 2, (Card(id="noun_chips", type=CardType.NOUN, name="CHIPS"),)
     )
-    state = _override_player_hand(state, 3, (_card("filler", CardType.NOUN),))
+    state = _override_player_hand(state, 3, (_card("subj_p1", CardType.SUBJECT),))
+    state = _override_player_hand(state, 0, ())
     state = play_card(state, state.players[1].hand[0], "QUANT")
     state = play_card(state, state.players[2].hand[0], "NOUN")
-    state = pass_turn(state)
+    state = play_card(state, state.players[3].hand[0], "SUBJECT")
     state = pass_turn(state)
     state = enter_resolve(state, rng=random.Random(0))
     for player in state.players:
@@ -460,10 +432,11 @@ def test_resolve_appends_consumed_effect_to_effect_discard() -> None:
     state = _override_player_hand(
         state, 2, (Card(id="noun_chips", type=CardType.NOUN, name="CHIPS"),)
     )
-    state = _override_player_hand(state, 3, (_card("filler", CardType.NOUN),))
+    state = _override_player_hand(state, 3, (_card("subj_p1", CardType.SUBJECT),))
+    state = _override_player_hand(state, 0, ())
     state = play_card(state, state.players[1].hand[0], "QUANT")
     state = play_card(state, state.players[2].hand[0], "NOUN")
-    state = pass_turn(state)
+    state = play_card(state, state.players[3].hand[0], "SUBJECT")
     state = pass_turn(state)
     state = enter_resolve(state, rng=random.Random(0))
     assert state.revealed_effect is None
@@ -486,22 +459,6 @@ def test_failed_rule_pushes_revealed_effect_to_effect_discard() -> None:
     assert state.phase is Phase.ROUND_START
     assert state.revealed_effect is None
     assert consumed in state.effect_discard
-
-
-def test_dealer_no_seed_failure_pushes_revealed_effect_to_effect_discard() -> None:
-    """Dealer-no-seed path (rule fails before BUILD) also discards the drawn card."""
-    state = start_game(seed=0)
-    seeded_effect_deck = state.effect_deck
-    expected_card = seeded_effect_deck[-1]
-    # Strip every SUBJECT from the dealer to force the no-seed failure path.
-    dealer = state.players[0]
-    no_subject_hand = tuple(c for c in dealer.hand if c.type is not CardType.SUBJECT)
-    state = _override_player_hand(state, 0, no_subject_hand)
-    state = advance_phase(state)
-    assert state.phase is Phase.ROUND_START
-    assert state.revealed_effect is None
-    assert state.effect_discard == (expected_card,)
-    assert len(state.effect_deck) == len(seeded_effect_deck) - 1
 
 
 def test_effect_deck_recycles_when_empty() -> None:

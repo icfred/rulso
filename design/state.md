@@ -90,7 +90,7 @@ A rule referencing a label held by no player ("empty" — e.g. CURSED with no BU
 4. **WHILE-rule tick**: re-evaluate each WHILE rule against current state; apply matching effects.
 5. **Shop check**: if `round_number % SHOP_INTERVAL == 0`, transition → `shop`, return after.
 6. Reveal effect card from `effect_deck` (face-up, alongside the active rule area).
-7. Dealer plays the condition template (IF/WHEN/WHILE) + first slot fragment.
+7. Dealer reveals the condition template (IF/WHEN/WHILE). All slots start unfilled; any player can play a matching card on their BUILD turn (RUL-75 removed the dealer's seed-fill of slot 0 — `subj.*` cards were dead in hand because slot 0 was always pre-filled by the dealer).
 8. Transition → `build`.
 
 ### Phase: `build`

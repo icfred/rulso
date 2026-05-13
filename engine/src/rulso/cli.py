@@ -117,17 +117,11 @@ def run_game(
                 _emit(out, "cap_hit", rounds_started=rounds_started, winner="none")
                 return 1
             rounds_started += 1
-            prior_dealer = state.dealer_seat
-            state = advance_phase(
-                state, rng=effect_rng
-            )  # ROUND_START → BUILD, SHOP, or back to ROUND_START on dealer-no-seed
-            if state.phase is Phase.ROUND_START:
-                _narrate_dealer_seed_failure(out, state, prior_dealer)
-                continue
+            state = advance_phase(state, rng=effect_rng)  # ROUND_START → BUILD or SHOP
             if state.phase is Phase.SHOP:
                 # RUL-51: defer round_start narration until SHOP completes and
-                # the dealer either seeds slot 0 or fails. The SHOP branch
-                # below picks up the same state on the next loop iteration.
+                # the dealer reveals the template. The SHOP branch below picks
+                # up the same state on the next loop iteration.
                 continue
             _narrate_round_start(out, state)
         elif state.phase is Phase.BUILD:
@@ -151,12 +145,8 @@ def run_game(
             # RUL-51: SHOP fires when ``round_number % SHOP_INTERVAL == 0`` and
             # at least one offer is available. Drive purchases in canonical
             # order (VP asc, chips asc, seat asc) and finalise via advance_phase.
-            prior_dealer = state.dealer_seat
             state = _drive_shop(out, state, rng)
-            state = advance_phase(state, rng=effect_rng)  # SHOP → BUILD or ROUND_START
-            if state.phase is Phase.ROUND_START:
-                _narrate_dealer_seed_failure(out, state, prior_dealer)
-                continue
+            state = advance_phase(state, rng=effect_rng)  # SHOP → BUILD
             _narrate_round_start(out, state)
         else:
             _emit(out, "unhandled_phase", phase=state.phase.value)
@@ -387,32 +377,6 @@ def _narrate_round_start(out: TextIO, state: GameState) -> None:
                 slot=play.slot,
                 card=play.card.id,
             )
-
-
-def _narrate_dealer_seed_failure(out: TextIO, state: GameState, prior_dealer: int) -> None:
-    """Emit round_start + rule_failed events when the dealer cannot seed slot 0.
-
-    enter_round_start consumes the round (round_number ticks, dealer rotates)
-    but never enters BUILD. Mirrors the build-time path so log-grepping sees
-    one ``round_start`` and one ``rule_failed`` per consumed round regardless
-    of fail mode.
-    """
-    _emit(
-        out,
-        "round_start",
-        round=state.round_number,
-        dealer=prior_dealer,
-        template="unknown",
-        effect_card="none",
-    )
-    _emit(
-        out,
-        "rule_failed",
-        round=state.round_number,
-        reason="dealer_no_seed_card",
-        next_dealer=state.dealer_seat,
-    )
-    _emit_standings(out, state)
 
 
 def _narrate_rule_failed(out: TextIO, prior_rule: RuleBuilder | None, state: GameState) -> None:

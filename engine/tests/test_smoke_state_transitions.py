@@ -36,12 +36,16 @@ def _override_hand(state: GameState, seat: int, hand: tuple[Card, ...]) -> GameS
 
 
 def _seat_one_card_hands() -> dict[int, tuple[Card, ...]]:
-    """Hands that fill SUBJECT (dealer) + QUANT (seat 1) + NOUN (seat 2). Seat 3 is filler."""
+    """Hands that fill QUANT (seat 1) + NOUN (seat 2) + SUBJECT (seat 3).
+
+    RUL-75: dealer no longer pre-fills slot 0. SUBJECT now needs to be played
+    during BUILD by some seat; here seat 3 holds it, dealer is empty.
+    """
     return {
-        0: (_card("d_subj", CardType.SUBJECT),),
+        0: (),
         1: (_card("h1_quant", CardType.MODIFIER),),
         2: (_card("h2_noun", CardType.NOUN),),
-        3: (_card("h3_filler", CardType.NOUN),),
+        3: (_card("h3_subj", CardType.SUBJECT),),
     }
 
 
@@ -64,10 +68,9 @@ def test_full_phase_sequence_lobby_to_resolve_via_hand_injected_fixture() -> Non
     assert state.dealer_seat == 0
     assert state.active_seat == 1
     assert state.active_rule is not None
-    # Dealer fragment occupies slot 0; seats 1..3 must fill slots 1..2.
     assert tuple(s.name for s in state.active_rule.slots) == ("SUBJECT", "QUANT", "NOUN")
-    assert state.active_rule.slots[0].filled_by is not None
-    assert all(s.filled_by is None for s in state.active_rule.slots[1:])
+    # RUL-75: all slots start unfilled.
+    assert all(s.filled_by is None for s in state.active_rule.slots)
 
     state = play_card(state, state.players[1].hand[0], "QUANT")
     assert state.phase is Phase.BUILD
@@ -75,11 +78,10 @@ def test_full_phase_sequence_lobby_to_resolve_via_hand_injected_fixture() -> Non
     state = play_card(state, state.players[2].hand[0], "NOUN")
     assert state.phase is Phase.BUILD
     assert state.active_seat == 3
-    # Seat 3 has nothing left to do (all 3 slots filled) → forced pass.
-    state = pass_turn(state)
+    state = play_card(state, state.players[3].hand[0], "SUBJECT")
     assert state.phase is Phase.BUILD
     assert state.active_seat == 0
-    state = pass_turn(state)
+    state = pass_turn(state)  # dealer pass — all slots already filled
     assert state.phase is Phase.RESOLVE
     assert state.active_rule is not None
     assert all(s.filled_by is not None for s in state.active_rule.slots)
@@ -89,27 +91,29 @@ def test_full_phase_sequence_lobby_to_resolve_via_hand_injected_fixture() -> Non
 
 
 def test_build_fails_back_to_round_start_when_any_slot_unfilled() -> None:
-    """One slot stays open across the revolution → rule fails cleanly."""
+    """One slot stays open across the revolution → rule fails cleanly.
+
+    RUL-75: dealer no longer pre-fills slot 0. Inject SUBJECT into seat 3 +
+    QUANT into seat 1 so two slots fill but NOUN never does.
+    """
     state = start_game()
-    # Strip every non-dealer hand so seats 1..3 forced-pass; give seat 1 a
-    # single QUANT so QUANT fills but NOUN never does.
-    state = _override_hand(state, 0, (_card("dealer_subj", CardType.SUBJECT),))
+    state = _override_hand(state, 0, ())
     state = _override_hand(state, 1, (_card("h1_quant", CardType.MODIFIER),))
     state = _override_hand(state, 2, ())
-    state = _override_hand(state, 3, ())
+    state = _override_hand(state, 3, (_card("h3_subj", CardType.SUBJECT),))
     state = advance_phase(state)
     assert state.phase is Phase.BUILD
 
     state = play_card(state, state.players[1].hand[0], "QUANT")
-    state = pass_turn(state)
-    state = pass_turn(state)
-    state = pass_turn(state)
+    state = pass_turn(state)  # seat 2 forced pass
+    state = play_card(state, state.players[3].hand[0], "SUBJECT")
+    state = pass_turn(state)  # dealer forced pass
 
     assert state.phase is Phase.ROUND_START
     assert state.active_rule is None
     assert state.dealer_seat == 1  # rotated on fail
     assert state.revealed_effect is None
-    # Dealer fragment + the QUANT play → 2 in discard.
+    # QUANT + SUBJECT plays → 2 in discard; NOUN slot stayed empty.
     assert len(state.discard) == 2
 
 
@@ -119,12 +123,11 @@ def test_build_fails_back_to_round_start_when_any_slot_unfilled() -> None:
 def test_dealer_rotates_one_full_revolution_over_four_failed_rounds() -> None:
     """Walk the phase machine for ``PLAYER_COUNT`` rounds via failed rules.
 
-    Empty-hand fixture forces every round_start to take the dealer-no-seed
-    path. That path consumes the round and rotates immediately without
-    entering BUILD — still one full dealer revolution.
+    RUL-75: empty hands now enter BUILD (no dealer seed-fill); the rule fails
+    at end-of-revolution with all slots unfilled and the dealer rotates.
 
     RUL-56: ``shop_pool`` overridden to empty so the SHOP cadence (round 3)
-    skips and the dealer-no-seed rotation is the only path exercised.
+    skips and the unfilled-slot rotation is the only path exercised.
     """
     state = start_game()
     state = state.model_copy(update={"shop_pool": ()})
@@ -136,7 +139,9 @@ def test_dealer_rotates_one_full_revolution_over_four_failed_rounds() -> None:
         prior_dealer = state.dealer_seat
         prior_round = state.round_number
         state = advance_phase(state)
-        # Empty hands → enter_round_start fails immediately, returns to ROUND_START.
+        assert state.phase is Phase.BUILD
+        for _ in range(PLAYER_COUNT):
+            state = pass_turn(state)
         assert state.phase is Phase.ROUND_START
         assert state.active_rule is None
         dealers.append(prior_dealer)
@@ -155,23 +160,17 @@ def test_round_start_to_build_sets_active_seat_left_of_dealer() -> None:
 
     RUL-56: ``shop_pool`` overridden to empty so the SHOP cadence (round 3)
     does not intercept ROUND_START → BUILD on the third dealer rotation.
+    RUL-75: dealer no longer needs to hold a SUBJECT — hands can be empty.
     """
     state = start_game()
     state = state.model_copy(update={"shop_pool": ()})
-    # Inject hands that always succeed: dealer holds a SUBJECT, the others
-    # forced-pass. The fail-and-rotate path then exercises every dealer seat.
+    for seat in range(PLAYER_COUNT):
+        state = _override_hand(state, seat, ())
     for expected_dealer in range(PLAYER_COUNT):
-        # Give the current dealer a SUBJECT (others empty) so round_start
-        # succeeds and BUILD opens with active_seat invariant.
-        for seat in range(PLAYER_COUNT):
-            if seat == expected_dealer:
-                state = _override_hand(state, seat, (_card(f"s_{seat}", CardType.SUBJECT),))
-            else:
-                state = _override_hand(state, seat, ())
         state = advance_phase(state)
         assert state.phase is Phase.BUILD
         assert state.dealer_seat == expected_dealer
         assert state.active_seat == (expected_dealer + 1) % PLAYER_COUNT
-        # Drive the rest of build to fail (no non-dealer hands).
+        # Drive the full revolution of forced passes to fail and rotate.
         for _ in range(PLAYER_COUNT):
             state = pass_turn(state)

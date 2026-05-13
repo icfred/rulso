@@ -36,7 +36,7 @@ from __future__ import annotations
 import random
 
 from rulso import cards as cards_module
-from rulso import effects, goals, labels, legality, persistence, status
+from rulso import effects, goals, labels, persistence, status
 from rulso.cards import ConditionTemplate
 from rulso.state import (
     ACTIVE_GOALS,
@@ -188,11 +188,11 @@ def advance_phase(state: GameState, *, rng: random.Random | None = None) -> Game
 def enter_round_start(state: GameState, *, rng: random.Random | None = None) -> GameState:
     """Run round_start steps 1-8 from ``design/state.md``.
 
-    Ends in one of three states:
+    Ends in one of two states:
 
-    * ``phase=BUILD`` — happy path; the dealer's first slot is pre-filled.
-    * ``phase=ROUND_START`` — dealer held no card matching slot 0's type, so
-      the rule failed immediately and the dealer rotated.
+    * ``phase=BUILD`` — happy path; all slots open. RUL-75 dropped the
+      dealer's seed-fill of slot 0, so SUBJECT/QUANT/NOUN all start unfilled
+      and the rule fails at end-of-build if any required slot stays open.
     * ``phase=SHOP`` — round_number hits the ``SHOP_INTERVAL`` cadence AND at
       least one offer is available; pauses for the driver to apply purchases
       via :func:`apply_shop_purchase`, then resume with
@@ -334,50 +334,17 @@ def _round_start_post_shop(state: GameState, *, rng: random.Random | None) -> Ga
     revealed_effect, effect_deck, effect_discard = _draw_effect_card(
         state.effect_deck, state.effect_discard, rng
     )
-    # Step 7: dealer plays the condition template + slot 0.
+    # Step 7: dealer reveals the condition template. RUL-75 removed the
+    # dealer's seed-fill of slot 0 — all slots start unfilled and any player
+    # on a BUILD turn may play a matching card into them. Rule failure is
+    # deferred to end-of-build if a required slot stays open.
     condition = _draw_condition_template()
     slots = tuple(Slot(name=cs.name, type=cs.type) for cs in condition.slots)
     if not slots:
         raise ValueError(f"condition template {condition.id!r} has no slots")
-    dealer = state.players[state.dealer_seat]
-    first_slot = slots[0]
-    chosen = legality.first_card_of_type(dealer.hand, first_slot.type)
-    if chosen is None:
-        # No legal seed-card in the dealer's hand → rule fails immediately.
-        # Round is consumed (round_number ticked) and dealer rotates. The
-        # just-drawn revealed_effect goes to effect_discard rather than being
-        # lost (design/effects-inventory.md "Rule-failure interaction").
-        new_dealer_seat = (state.dealer_seat + 1) % PLAYER_COUNT
-        failed_effect_discard = (
-            effect_discard + (revealed_effect,) if revealed_effect is not None else effect_discard
-        )
-        return state.model_copy(
-            update={
-                "phase": Phase.ROUND_START,
-                "active_rule": None,
-                "dealer_seat": new_dealer_seat,
-                "build_turns_taken": 0,
-                "revealed_effect": None,
-                "effect_deck": effect_deck,
-                "effect_discard": failed_effect_discard,
-            }
-        )
-    new_dealer_hand = _remove_first(dealer.hand, chosen)
-    new_dealer = dealer.model_copy(update={"hand": new_dealer_hand})
-    players = (
-        state.players[: state.dealer_seat] + (new_dealer,) + state.players[state.dealer_seat + 1 :]
-    )
-    filled_first = first_slot.model_copy(update={"filled_by": chosen})
-    final_slots = (filled_first,) + slots[1:]
-    first_play = Play(player_id=dealer.id, card=chosen, slot=first_slot.name)
-    active_rule = RuleBuilder(
-        template=condition.kind,
-        slots=final_slots,
-        plays=(first_play,),
-    )
+    active_rule = RuleBuilder(template=condition.kind, slots=slots, plays=())
     primed = state.model_copy(
         update={
-            "players": players,
             "phase": Phase.ROUND_START,
             "revealed_effect": revealed_effect,
             "effect_deck": effect_deck,
