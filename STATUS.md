@@ -1,4 +1,4 @@
-_Last updated: 2026-05-12 by orchestrator session — **DESIGN TUNING + SIM HARNESS SHIPPED**: RUL-73 (VP_TO_WIN 3→5; `eff.noop` swapped for `eff.draw.2.alt`; deck depth preserved at 14) shipped via PR #77; RUL-74 (`rulso simulate` harness — bot-vs-bot quantitative design signal) shipped via PR #78. Engine 566 tests passing (549 + 17 new sim tests). **First sim run against post-tuning main reveals fundamental design findings** — 97.8% of winner VP comes from goal claims (rule-building is theatre); 13 zero-play cards including ALL SUBJECTs (dealer auto-fills the slot, leaving SUBJECT cards dead in hand) + ALL operator MODIFIERs (random bot skips them per RUL-43); 47% cap-hit rate; 3 of 7 goals never claim. **Decision point**: build ISMCTS first (RUL-59 next sub-issue — smart bot may unmask design that random-bot can't see) OR fix structural SUBJECT-dead-weight first (~1-PR engine + data change). User to decide._
+_Last updated: 2026-05-12 by orchestrator session — **STRUCTURAL FIX SHIPPED**: RUL-75 (remove dealer's SUBJECT auto-fill — SUBJECT slot starts empty, players play their SUBJECT cards) shipped via PR #79. Pre/post sim diff: SUBJECT card-usage 0 → ~22,000 plays (8 cards activated cleanly), zero-play count 13 → 5 (only operator MODIFIERs remain — RUL-43 known limitation), cap-hit barely shifted (46.6% → 48.8%, well under 70% escalation), winning rule-VP fraction roughly **doubled** (2.15% → 4.60%). Engine 563 tests; M2 watchable + determinism baselines unchanged. **Headline still stands**: 95.4% of winner VP from goals, not rules. Random-bot can't tell us if this is a bot weakness or a design problem. **Decision point**: build ISMCTS (RUL-59 next sub-issue) to disambiguate, OR rebalance goals first (3 dead goals = structural goal-pool problem regardless of bot)._
 
 # Rulso — orchestrator bootstrap
 
@@ -36,34 +36,34 @@ Foundation Client DoD bar is "ugly but playable": engine WS protocol + server, c
 
 User retro on process (carried from prior session): substrate-first was correct for engineering but UI iteration deferred too late; for the next project, paper-first / single-file-script-first prototyping is mandatory before committing engineering substrate. User opted to plow on with Rulso to a fun-or-not-fun verdict rather than pivot — sim harness exists to make that verdict cheap (seconds per data point, not games per data point).
 
-### Sim findings (1000-game sweep, post-RUL-73/74 main, `bots.random` only)
+### Sim findings (1000-game sweeps; `bots.random` only)
 
-```
-winners: 534/1000  cap_hits=466  by_seat={'0': 166, '1': 121, '2': 131, '3': 116}
-length: min=4 median=25 mean=101.2 max=200 std=92.5 cap_hit_rate=46.6%
-vp_source: all=rule:666/goal:7756  won=rule:148/goal:6734
-chips_final: min=0 median=2 mean=3.1 max=40 std=5.5
-```
+| Metric | Pre-RUL-75 (post-73/74) | Post-RUL-75 | Direction |
+|---|---|---|---|
+| winners | 534/1000 | 512/1000 | flat |
+| cap_hit_rate | 46.6% | 48.8% | flat (+2.2pp) |
+| mean rounds | 101.2 | 107.9 | flat |
+| vp_source won (rule:goal) | 148:6734 (2.15%) | 291:6030 (4.60%) | **doubled but still tiny** |
+| zero-play cards | 13 (SUBJECTs + operators) | 5 (operators only) | **fixed** |
+| dead goals | 3 (banker / builder / philanthropist) | 3 (same) | unchanged |
 
-**Five findings worth a design conversation**:
+**Findings standing post-RUL-75**:
 
-1. **Rule-building is theatre** — winners' VP source: rule effects 148 vs goal claims 6734 → **97.8% from goals**. The entire central mechanic — IF/WHEN/WHILE rule construction — barely contributes to winning. Goals are the real game
-2. **All 8 SUBJECTs + 5 operator MODIFIERs are dead** (13 zero-play cards across 1000 games):
-   - SUBJECT cards (`subj.{p0..p3, leader, wounded, anyone, each}`) rot in hand because the dealer auto-fills the SUBJECT slot at round_start (`legality.first_card_of_type` driven). Players never see an unfilled SUBJECT slot to play into. Either remove SUBJECTs from the player deck OR change dealer behaviour OR allow SUBJECT replacement plays
-   - Operator MODIFIERs (`mod.op.{and, or, but, more_than, at_least}`) are deliberately skipped by `bots.random._enumerate_plays` per RUL-43 ("the bot leaves them in hand rather than crash"). Known M2 limitation — ISMCTS will likely use them
-3. **47% cap-hit rate** — 466/1000 games stalemate at 200 rounds. Either VP_TO_WIN=5 is too high, or random-bot indecision is the cause (could be unmasked by ISMCTS)
-4. **Goal pool unbalanced** — `goal.hoarder` claims 4236 times; `goal.banker`, `goal.builder`, `goal.philanthropist` claim 0 times; `goal.survivor` claims only 104. Three of seven goals are dead
-5. **Effect cards roughly balanced** — every effect card in the deck has fire-rate ≥0.99 (drawn ≈ fired); no dead effects post-eff.noop swap
+1. **Rule-building is still mostly theatre** — winners' VP source 4.60% from rules, 95.4% from goals. RUL-75 doubled the rule-VP fraction (SUBJECT cards activated → more rules complete → more rule-effect VP) but the absolute number is still tiny. **Random-bot can't tell us if this is bot weakness or design imbalance** — that's the question ISMCTS will answer
+2. **5 operator MODIFIERs remain dead** — `mod.op.{and, or, but, more_than, at_least}` deliberately skipped by `bots.random._enumerate_plays` per RUL-43. Known M2 limitation; ISMCTS will use them
+3. **48.8% cap-hit rate** — virtually unchanged from RUL-75. Either VP_TO_WIN=5 is too high relative to per-round payoff, or random-bot indecision is the cause. ISMCTS will disambiguate
+4. **Goal pool still unbalanced (bot-independent)** — `goal.hoarder` claims 4476 times; `goal.banker`, `goal.builder`, `goal.philanthropist` claim 0 times; `goal.survivor` claims only 81. Three of seven goals are dead. Worth fixing regardless of bot — predicates are too tight or contradictory with the bot's natural play
+5. **Effect cards balanced** — every effect card has fire-rate ≥0.90 (drawn ≈ fired); no dead effects post-RUL-73 swap. RUL-73 hit its mark
 
-### Decision-point: ISMCTS first vs structural design fix first
+### Decision-point: ISMCTS vs goal rebalance
 
-Two ways forward:
+Two paths forward (parallel-safe with each other — engine bot vs `cards.yaml` data):
 
-**Option A — Build ISMCTS first (RUL-59 next sub-issue)**: per ADR-0006, the original plan was smart-bots-after-Foundation-Client for exactly this reason. Random bot is too noisy to draw structural conclusions — it skips operator MODIFIERs by design and may misuse SUBJECTs even when legal. Smart bot retunes the random-bot baseline; if cap-hit drops + VP shifts to rules + dead-card list shrinks, the design is salvageable and tuning can proceed. If not, the design has structural problems random-bot already revealed correctly. **Cost**: ISMCTS is a multi-PR build per `tech.md` §"Bot AI" (sample-from-public-info, K rollouts per move, eval function). Days of work
-**Option B — Fix the structural SUBJECT dead-weight first**: simpler, faster signal. Either (a) remove `subj.*` cards from `cards.yaml deck:` entirely (dealer auto-fill draws from a separate small pool), (b) change dealer to NOT auto-fill SUBJECT (make it a player decision), (c) allow SUBJECT replacement / overlay plays. ~1-PR engine + data change. Re-run sim immediately to see if the dead-weight finding moves
-**Option A+B in parallel**: both are parallel-safe (engine substrate vs bot module). Could fan if user has appetite for two parallel chats again
+**Option A — Build ISMCTS (RUL-59 next sub-issue)**: per ADR-0006 the original plan. Smart bot retunes the baseline; if cap-hit drops + rule-VP fraction climbs + operator MODIFIERs activate, the design is salvageable and remaining tuning is balance work. If not, the design has structural problems even smart play can't paper over. **Cost**: multi-PR build per `tech.md` §"Bot AI" (sample-from-public-info, K rollouts per move, eval function). Days of work; the substrate this needs (sim harness, action enumeration, deterministic engine) is already built
 
-Recommendation: **A** is the principled path (don't tune blind; smart-bot signal validates or refutes the random-bot findings). **B** is a quick-cycle structural fix; even if ISMCTS later shows random-bot was wrong about the dead cards, removing structurally-dead cards from the deck is still correct. **A+B in parallel** gets both signals in one workday. User picks.
+**Option B — Goal pool rebalance**: 3/7 goals never claim — bot-independent finding. Predicates are too tight or contradictory with how bots naturally play. Either tighten predicates, swap dead goals for new ones, or reduce goal-VP weighting. ~1-PR `cards.yaml` + maybe `goals.py` predicate adjustment. Re-run sim immediately to see if rule-VP fraction shifts (if goals are nerfed, more wins should come from rules — or cap-hit spikes if nothing replaces the goal-VP path)
+
+**Recommendation**: **A**. The biggest open question — "is rule-building theatre because the design is broken, or because the random bot can't combine cards strategically?" — only ISMCTS can answer. Without smart bot data we can't tell which findings are real. Goal rebalance can wait; the goal pool is one of many balance levers that will need tuning regardless of bot, and tuning blind right now produces noise. If you want to ship signal in parallel and have a worker chat to spare, **A+B** is fine — but B alone is the wrong call.
 
 ### RUL-73 + RUL-74 ship summary (2026-05-12, PRs #77 / #78)
 
