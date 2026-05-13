@@ -123,24 +123,20 @@ def _override_hand(state: GameState, seat: int, hand: tuple[Card, ...]) -> GameS
     return state.model_copy(update={"players": new_players})
 
 
-def _force_dealer_subject_only(state: GameState) -> GameState:
-    """Strip every hand to deterministically force the unfilled-slot fail path.
+def _force_all_empty_hands(state: GameState) -> GameState:
+    """Strip every hand so the full revolution forced-passes.
 
-    Dealer holds exactly one SUBJECT (seeds slot 0). Every other seat is empty
-    so QUANT and NOUN never fill — rule fails on the unfilled-slot branch
-    rather than the dealer-no-seed branch.
+    RUL-75: dealer no longer pre-fills slot 0, so the all-empty configuration
+    yields a clean unfilled-slot fail at end-of-build.
     """
-    seed_card = Card(id="dealer_subj", type=CardType.SUBJECT, name="p0")
-    state = _override_hand(state, state.dealer_seat, (seed_card,))
     for seat in range(PLAYER_COUNT):
-        if seat != state.dealer_seat:
-            state = _override_hand(state, seat, ())
+        state = _override_hand(state, seat, ())
     return state
 
 
 def _drive_one_failed_round(state: GameState) -> GameState:
     """Walk one round to its fail-and-rotate point via the unfilled-slot path."""
-    state = _force_dealer_subject_only(state)
+    state = _force_all_empty_hands(state)
     state = advance_phase(state)  # ROUND_START → BUILD
     assert state.phase.value == "build"
     for _ in range(PLAYER_COUNT):
@@ -184,24 +180,26 @@ def test_failed_rule_via_play_card_partial_fill_still_no_effect() -> None:
 
     Exercises the partial-fill branch of ``_fail_rule_and_rotate``: discarded
     fragments include the played cards, but no resolver runs and no chip / VP
-    delta lands on any player.
+    delta lands on any player. RUL-75: dealer plays SUBJECT during BUILD
+    rather than at round_start.
     """
     state = start_game()
-    # Force dealer-with-SUBJECT + seat 1 with one NOUN; QUANT slot stays open.
-    state = _force_dealer_subject_only(state)
+    state = _force_all_empty_hands(state)
     seat1_hand = (Card(id="held_noun", type=CardType.NOUN, name="held_noun"),)
     state = _override_hand(state, 1, seat1_hand)
+    dealer_hand = (Card(id="dealer_subj", type=CardType.SUBJECT, name="p0"),)
+    state = _override_hand(state, state.dealer_seat, dealer_hand)
 
     chips_before = tuple(p.chips for p in state.players)
     state = advance_phase(state)  # → BUILD
     state = play_card(state, seat1_hand[0], "NOUN")
-    state = pass_turn(state)  # seat 2
-    state = pass_turn(state)  # seat 3
-    state = pass_turn(state)  # dealer closes revolution
+    state = pass_turn(state)  # seat 2 forced pass
+    state = pass_turn(state)  # seat 3 forced pass
+    state = play_card(state, dealer_hand[0], "SUBJECT")  # dealer closes revolution
 
     assert state.phase.value == "round_start"
     assert state.active_rule is None
     assert state.dealer_seat == 1
     assert tuple(p.chips for p in state.players) == chips_before
-    # Dealer fragment + the one played NOUN → 2 in discard.
+    # NOUN + SUBJECT played → 2 in discard; QUANT slot stayed empty.
     assert len(state.discard) == 2
